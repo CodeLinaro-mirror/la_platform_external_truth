@@ -39,10 +39,24 @@ java_library {
     ],
     static_libs: [
         "guava",
-        "asm-9.2",
     ],
     plugins: ["auto_value_plugin"],
     sdk_version: "current",
+    // Exclude the functionality that requires bytecode analysis on the device.
+    // Android does not use standard Java .class files.
+    target: {
+        android: {
+            exclude_srcs: ["core/src/main/java/com/google/common/truth/ActualValueInference.java"],
+        },
+        host: {
+            static_libs: ["ow2-asm"],
+        },
+    },
+    errorprone: {
+        javacflags: [
+            "-Xep:NoCanIgnoreReturnValueOnClasses:WARN",
+        ],
+    },
 }
 
 java_library {
@@ -59,5 +73,23 @@ java_library {
         "guava",
     ],
     java_version: "1.8",
+    sdk_version: "current",
+}
+
+
+java_library {
+    name: "truth-liteproto-extension",
+    host_supported: true,
+    srcs: ["extensions/liteproto/src/main/java/**/*.java"],
+    libs: [
+        "auto_value_annotations",
+        "error_prone_annotations",
+        "guava-android-annotation-stubs",
+        "truth",
+    ],
+    static_libs: [
+        "guava",
+        "libprotobuf-java-lite",
+    ],
     sdk_version: "current",
 }
