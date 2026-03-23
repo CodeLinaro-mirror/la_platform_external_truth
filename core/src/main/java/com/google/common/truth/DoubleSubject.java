@@ -16,48 +16,44 @@
 
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.numericFact;
 import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.MathUtil.equalWithinTolerance;
 import static com.google.common.truth.MathUtil.notEqualWithinTolerance;
-import static com.google.common.truth.Platform.doubleToString;
+import static java.lang.Double.NEGATIVE_INFINITY;
 import static java.lang.Double.NaN;
-import static java.lang.Double.doubleToLongBits;
+import static java.lang.Double.POSITIVE_INFINITY;
 
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for {@link Double} subjects.
- *
- * @author Kurt Alfred Kluever
- */
+/** A subject for {@link Double} values. */
 public final class DoubleSubject extends ComparableSubject<Double> {
-  private static final long NEG_ZERO_BITS = doubleToLongBits(-0.0);
-
   private final @Nullable Double actual;
 
-  DoubleSubject(FailureMetadata metadata, @Nullable Double actual) {
+  private DoubleSubject(FailureMetadata metadata, @Nullable Double actual) {
     super(metadata, actual);
     this.actual = actual;
   }
 
   /**
-   * A partially specified check about an approximate relationship to a {@code double} subject using
-   * a tolerance.
+   * A partially specified check about an approximate relationship to a {@code double} value using a
+   * tolerance.
    */
-  public abstract static class TolerantDoubleComparison {
+  public static final class TolerantDoubleComparison {
+    private final DoubleComparer comparer;
 
-    // Prevent subclassing outside of this class
-    private TolerantDoubleComparison() {}
+    private TolerantDoubleComparison(DoubleComparer comparer) {
+      this.comparer = comparer;
+    }
 
     /**
-     * Fails if the subject was expected to be within the tolerance of the given value but was not
-     * <i>or</i> if it was expected <i>not</i> to be within the tolerance but was. The subject and
-     * tolerance are specified earlier in the fluent call chain.
+     * Checks that the actual value is within the tolerance of the given value or <i>not</i> within
+     * the tolerance of the given value, depending on the choice made earlier in the fluent call
+     * chain. The actual value and tolerance are also specified earlier in the fluent call chain.
      */
-    public abstract void of(double expectedDouble);
+    public void of(double other) {
+      comparer.compareAgainst(other);
+    }
 
     /**
      * @throws UnsupportedOperationException always
@@ -66,7 +62,7 @@ public final class DoubleSubject extends ComparableSubject<Double> {
      */
     @Deprecated
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(@Nullable Object other) {
       throw new UnsupportedOperationException(
           "If you meant to compare doubles, use .of(double) instead.");
     }
@@ -80,19 +76,27 @@ public final class DoubleSubject extends ComparableSubject<Double> {
     public int hashCode() {
       throw new UnsupportedOperationException("Subject.hashCode() is not supported.");
     }
+
+    static TolerantDoubleComparison comparing(DoubleComparer comparer) {
+      return new TolerantDoubleComparison(comparer);
+    }
+  }
+
+  private interface DoubleComparer {
+    void compareAgainst(double other);
   }
 
   /**
-   * Prepares for a check that the subject is a finite number within the given tolerance of an
+   * Prepares for a check that the actual value is a finite number within the given tolerance of an
    * expected value that will be provided in the next call in the fluent chain.
    *
-   * <p>The check will fail if either the subject or the object is {@link Double#POSITIVE_INFINITY},
-   * {@link Double#NEGATIVE_INFINITY}, or {@link Double#NaN}. To check for those values, use {@link
-   * #isPositiveInfinity}, {@link #isNegativeInfinity}, {@link #isNaN}, or (with more generality)
-   * {@link #isEqualTo}.
+   * <p>The check will fail if either the actual value or the expected value is {@link
+   * Double#POSITIVE_INFINITY}, {@link Double#NEGATIVE_INFINITY}, or {@link Double#NaN}. To check
+   * for those values, use {@link #isPositiveInfinity}, {@link #isNegativeInfinity}, {@link #isNaN},
+   * or (with more generality) {@link #isEqualTo}.
    *
    * <p>The check will pass if both values are zero, even if one is {@code 0.0} and the other is
-   * {@code -0.0}. Use {@code #isEqualTo} to assert that a value is exactly {@code 0.0} or that it
+   * {@code -0.0}. Use {@link #isEqualTo} to assert that a value is exactly {@code 0.0} or that it
    * is exactly {@code -0.0}.
    *
    * <p>You can use a tolerance of {@code 0.0} to assert the exact equality of finite doubles, but
@@ -100,99 +104,139 @@ public final class DoubleSubject extends ComparableSubject<Double> {
    * and {@code -0.0}). See the documentation on {@link #isEqualTo} for advice on when exact
    * equality assertions are appropriate.
    *
-   * @param tolerance an inclusive upper bound on the difference between the subject and object
-   *     allowed by the check, which must be a non-negative finite value, i.e. not {@link
-   *     Double#NaN}, {@link Double#POSITIVE_INFINITY}, or negative, including {@code -0.0}
+   * @param tolerance an inclusive upper bound on the difference between the actual value and
+   *     expected value allowed by the check, which must be a non-negative finite value, i.e. not
+   *     {@link Double#NaN}, {@link Double#POSITIVE_INFINITY}, or negative, including {@code -0.0}
    */
   public TolerantDoubleComparison isWithin(double tolerance) {
-    return new TolerantDoubleComparison() {
-      @Override
-      public void of(double expected) {
-        Double actual = DoubleSubject.this.actual;
-        checkNotNull(
-            actual, "actual value cannot be null. tolerance=%s expected=%s", tolerance, expected);
-        checkTolerance(tolerance);
-
-        if (!equalWithinTolerance(actual, expected, tolerance)) {
-          failWithoutActual(
-              fact("expected", doubleToString(expected)),
-              butWas(),
-              fact("outside tolerance", doubleToString(tolerance)));
-        }
-      }
-    };
+    return TolerantDoubleComparison.comparing(
+        other -> {
+          if (!Double.isFinite(tolerance)) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because tolerance was not"
+                        + " finite"),
+                numericFact("expected", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (Double.compare(tolerance, 0.0) < 0) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because tolerance was negative"),
+                numericFact("expected", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (!Double.isFinite(other)) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because expected value was not"
+                        + " finite"),
+                numericFact("expected", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (actual == null || !Double.isFinite(actual)) {
+            failWithoutActual(
+                numericFact("expected a finite value near", other),
+                numericFact("but was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (!equalWithinTolerance(actual, other, tolerance)) {
+            failWithoutActual(
+                numericFact("expected", other),
+                numericFact("but was", actual),
+                numericFact("outside tolerance", tolerance));
+          }
+        });
   }
 
   /**
-   * Prepares for a check that the subject is a finite number not within the given tolerance of an
-   * expected value that will be provided in the next call in the fluent chain.
+   * Prepares for a check that the actual value is a finite number not within the given tolerance of
+   * an expected value that will be provided in the next call in the fluent chain.
    *
-   * <p>The check will fail if either the subject or the object is {@link Double#POSITIVE_INFINITY},
-   * {@link Double#NEGATIVE_INFINITY}, or {@link Double#NaN}. See {@link #isFinite}, {@link
-   * #isNotNaN}, or {@link #isNotEqualTo} for checks with other behaviours.
+   * <p>The check will fail if either the actual value or the expected value is {@link
+   * Double#POSITIVE_INFINITY}, {@link Double#NEGATIVE_INFINITY}, or {@link Double#NaN}. See {@link
+   * #isFinite}, {@link #isNotNaN}, or {@link #isNotEqualTo} for checks with other behaviours.
    *
    * <p>The check will fail if both values are zero, even if one is {@code 0.0} and the other is
-   * {@code -0.0}. Use {@code #isNotEqualTo} for a test which fails for a value of exactly zero with
+   * {@code -0.0}. Use {@link #isNotEqualTo} for a test which fails for a value of exactly zero with
    * one sign but passes for zero with the opposite sign.
    *
    * <p>You can use a tolerance of {@code 0.0} to assert the exact non-equality of finite doubles,
    * but sometimes {@link #isNotEqualTo} is preferable (note the different behaviours around
    * non-finite values and {@code -0.0}).
    *
-   * @param tolerance an exclusive lower bound on the difference between the subject and object
-   *     allowed by the check, which must be a non-negative finite value, i.e. not {@code
-   *     Double.NaN}, {@code Double.POSITIVE_INFINITY}, or negative, including {@code -0.0}
+   * @param tolerance an exclusive lower bound on the difference between the actual value and
+   *     expected value allowed by the check, which must be a non-negative finite value, i.e. not
+   *     {@link Double#NaN}, {@link Double#POSITIVE_INFINITY}, or negative, including {@code -0.0}
    */
   public TolerantDoubleComparison isNotWithin(double tolerance) {
-    return new TolerantDoubleComparison() {
-      @Override
-      public void of(double expected) {
-        Double actual = DoubleSubject.this.actual;
-        checkNotNull(
-            actual, "actual value cannot be null. tolerance=%s expected=%s", tolerance, expected);
-        checkTolerance(tolerance);
-
-        if (!notEqualWithinTolerance(actual, expected, tolerance)) {
-          failWithoutActual(
-              fact("expected not to be", doubleToString(expected)),
-              butWas(),
-              fact("within tolerance", doubleToString(tolerance)));
-        }
-      }
-    };
+    return TolerantDoubleComparison.comparing(
+        other -> {
+          if (!Double.isFinite(tolerance)) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because tolerance was not"
+                        + " finite"),
+                numericFact("expected not to be", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (Double.compare(tolerance, 0.0) < 0) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because tolerance was negative"),
+                numericFact("expected not to be", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (!Double.isFinite(other)) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because expected value was not"
+                        + " finite"),
+                numericFact("expected not to be", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (actual == null || !Double.isFinite(actual)) {
+            failWithoutActual(
+                numericFact("expected a finite value that is not near", other),
+                numericFact("but was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (!notEqualWithinTolerance(actual, other, tolerance)) {
+            failWithoutActual(
+                numericFact("expected not to be", other),
+                numericFact("but was", actual),
+                numericFact("within tolerance", tolerance));
+          }
+        });
   }
 
   /**
-   * Asserts that the subject is exactly equal to the given value, with equality defined as by
-   * {@code Double#equals}. This method is <i>not</i> recommended when the code under test is doing
+   * Asserts that the actual value is exactly equal to the given value, with equality defined as by
+   * {@link Double#equals}. This method is <i>not</i> recommended when the code under test is doing
    * any kind of arithmetic: use {@link #isWithin} with a suitable tolerance in that case. (Remember
    * that the exact result of floating point arithmetic is sensitive to apparently trivial changes
-   * such as replacing {@code (a + b) + c} with {@code a + (b + c)}, and that unless {@code
-   * strictfp} is in force even the result of {@code (a + b) + c} is sensitive to the JVM's choice
-   * of precision for the intermediate result.) This method is recommended when the code under test
-   * is specified as either copying a value without modification from its input or returning a
-   * well-defined literal or constant value.
+   * such as replacing {@code (a + b) + c} with {@code a + (b + c)}.) This method is recommended
+   * when the code under test is specified as either copying a value without modification from its
+   * input or returning a well-defined literal or constant value.
    *
    * <p><b>Note:</b> The assertion {@code isEqualTo(0.0)} fails for an input of {@code -0.0}, and
    * vice versa. For an assertion that passes for either {@code 0.0} or {@code -0.0}, use {@link
    * #isZero}.
    */
   @Override
-  public final void isEqualTo(@Nullable Object other) {
-    super.isEqualTo(other);
+  public void isEqualTo(@Nullable Object expected) {
+    super.isEqualTo(expected);
   }
 
   /**
-   * Asserts that the subject is not exactly equal to the given value, with equality defined as by
-   * {@code Double#equals}. See {@link #isEqualTo} for advice on when exact equality is recommended.
-   * Use {@link #isNotWithin} for an assertion with a tolerance.
+   * Asserts that the actual value is not exactly equal to the given value, with equality defined as
+   * by {link Double#equals}. See {@link #isEqualTo} for advice on when exact equality is
+   * recommended. Use {@link #isNotWithin} for an assertion with a tolerance.
    *
    * <p><b>Note:</b> The assertion {@code isNotEqualTo(0.0)} passes for {@code -0.0}, and vice
    * versa. For an assertion that fails for either {@code 0.0} or {@code -0.0}, use {@link
    * #isNonZero}.
    */
   @Override
-  public final void isNotEqualTo(@Nullable Object other) {
+  public void isNotEqualTo(@Nullable Object other) {
     super.isNotEqualTo(other);
   }
 
@@ -201,73 +245,59 @@ public final class DoubleSubject extends ComparableSubject<Double> {
    */
   @Override
   @Deprecated
-  public final void isEquivalentAccordingToCompareTo(@Nullable Double other) {
-    super.isEquivalentAccordingToCompareTo(other);
+  public void isEquivalentAccordingToCompareTo(@Nullable Double expected) {
+    super.isEquivalentAccordingToCompareTo(expected);
   }
 
-  /**
-   * Ensures that the given tolerance is a non-negative finite value, i.e. not {@code Double.NaN},
-   * {@code Double.POSITIVE_INFINITY}, or negative, including {@code -0.0}.
-   */
-  static void checkTolerance(double tolerance) {
-    checkArgument(!Double.isNaN(tolerance), "tolerance cannot be NaN");
-    checkArgument(tolerance >= 0.0, "tolerance (%s) cannot be negative", tolerance);
-    checkArgument(
-        doubleToLongBits(tolerance) != NEG_ZERO_BITS,
-        "tolerance (%s) cannot be negative",
-        tolerance);
-    checkArgument(tolerance != Double.POSITIVE_INFINITY, "tolerance cannot be POSITIVE_INFINITY");
-  }
-
-  /** Asserts that the subject is zero (i.e. it is either {@code 0.0} or {@code -0.0}). */
-  public final void isZero() {
-    if (actual == null || actual.doubleValue() != 0.0) {
+  /** Asserts that the actual value is zero (i.e. it is either {@code 0.0} or {@code -0.0}). */
+  public void isZero() {
+    if (actual == null || actual != 0.0) {
       failWithActual(simpleFact("expected zero"));
     }
   }
 
   /**
-   * Asserts that the subject is a non-null value other than zero (i.e. it is not {@code 0.0},
+   * Asserts that the actual value is a non-null value other than zero (i.e. it is not {@code 0.0},
    * {@code -0.0} or {@code null}).
    */
-  public final void isNonZero() {
+  public void isNonZero() {
     if (actual == null) {
       failWithActual(simpleFact("expected a double other than zero"));
-    } else if (actual.doubleValue() == 0.0) {
+    } else if (actual == 0.0) {
       failWithActual(simpleFact("expected not to be zero"));
     }
   }
 
-  /** Asserts that the subject is {@link Double#POSITIVE_INFINITY}. */
-  public final void isPositiveInfinity() {
-    isEqualTo(Double.POSITIVE_INFINITY);
+  /** Asserts that the actual value is {@link Double#POSITIVE_INFINITY}. */
+  public void isPositiveInfinity() {
+    isEqualTo(POSITIVE_INFINITY);
   }
 
-  /** Asserts that the subject is {@link Double#NEGATIVE_INFINITY}. */
-  public final void isNegativeInfinity() {
-    isEqualTo(Double.NEGATIVE_INFINITY);
+  /** Asserts that the actual value is {@link Double#NEGATIVE_INFINITY}. */
+  public void isNegativeInfinity() {
+    isEqualTo(NEGATIVE_INFINITY);
   }
 
-  /** Asserts that the subject is {@link Double#NaN}. */
-  public final void isNaN() {
+  /** Asserts that the actual value is {@link Double#NaN}. */
+  public void isNaN() {
     isEqualTo(NaN);
   }
 
   /**
-   * Asserts that the subject is finite, i.e. not {@link Double#POSITIVE_INFINITY}, {@link
+   * Asserts that the actual value is finite, i.e. not {@link Double#POSITIVE_INFINITY}, {@link
    * Double#NEGATIVE_INFINITY}, or {@link Double#NaN}.
    */
-  public final void isFinite() {
+  public void isFinite() {
     if (actual == null || actual.isNaN() || actual.isInfinite()) {
       failWithActual(simpleFact("expected to be finite"));
     }
   }
 
   /**
-   * Asserts that the subject is a non-null value other than {@link Double#NaN} (but it may be
+   * Asserts that the actual value is a non-null value other than {@link Double#NaN} (but it may be
    * {@link Double#POSITIVE_INFINITY} or {@link Double#NEGATIVE_INFINITY}).
    */
-  public final void isNotNaN() {
+  public void isNotNaN() {
     if (actual == null) {
       failWithActual(simpleFact("expected a double other than NaN"));
     } else {
@@ -276,42 +306,46 @@ public final class DoubleSubject extends ComparableSubject<Double> {
   }
 
   /**
-   * Checks that the subject is greater than {@code other}.
+   * Checks that the actual value is greater than {@code other}.
    *
-   * <p>To check that the subject is greater than <i>or equal to</i> {@code other}, use {@link
+   * <p>To check that the actual value is greater than <i>or equal to</i> {@code other}, use {@link
    * #isAtLeast}.
    */
-  public final void isGreaterThan(int other) {
+  public void isGreaterThan(int other) {
     isGreaterThan((double) other);
   }
 
   /**
-   * Checks that the subject is less than {@code other}.
+   * Checks that the actual value is less than {@code other}.
    *
-   * <p>To check that the subject is less than <i>or equal to</i> {@code other}, use {@link
+   * <p>To check that the actual value is less than <i>or equal to</i> {@code other}, use {@link
    * #isAtMost} .
    */
-  public final void isLessThan(int other) {
+  public void isLessThan(int other) {
     isLessThan((double) other);
   }
 
   /**
-   * Checks that the subject is less than or equal to {@code other}.
+   * Checks that the actual value is less than or equal to {@code other}.
    *
-   * <p>To check that the subject is <i>strictly</i> less than {@code other}, use {@link
+   * <p>To check that the actual value is <i>strictly</i> less than {@code other}, use {@link
    * #isLessThan}.
    */
-  public final void isAtMost(int other) {
+  public void isAtMost(int other) {
     isAtMost((double) other);
   }
 
   /**
-   * Checks that the subject is greater than or equal to {@code other}.
+   * Checks that the actual value is greater than or equal to {@code other}.
    *
-   * <p>To check that the subject is <i>strictly</i> greater than {@code other}, use {@link
+   * <p>To check that the actual value is <i>strictly</i> greater than {@code other}, use {@link
    * #isGreaterThan}.
    */
-  public final void isAtLeast(int other) {
+  public void isAtLeast(int other) {
     isAtLeast((double) other);
+  }
+
+  static Factory<DoubleSubject, Double> doubles() {
+    return DoubleSubject::new;
   }
 }

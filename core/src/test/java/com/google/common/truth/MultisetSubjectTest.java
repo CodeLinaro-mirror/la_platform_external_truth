@@ -15,6 +15,9 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.FailureAssertions.assertFailureKeys;
+import static com.google.common.truth.FailureAssertions.assertFailureValue;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 
@@ -24,13 +27,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for Multiset Subjects.
- *
- * @author Kurt Alfred Kluever
- */
+/** Tests for {@link MultisetSubject}. */
 @RunWith(JUnit4.class)
-public class MultisetSubjectTest extends BaseSubjectTestCase {
+public class MultisetSubjectTest {
 
   @Test
   public void hasCount() {
@@ -45,11 +44,37 @@ public class MultisetSubjectTest extends BaseSubjectTestCase {
   @Test
   public void hasCountFail() {
     ImmutableMultiset<String> multiset = ImmutableMultiset.of("kurt", "kurt", "kluever");
-    expectFailureWhenTestingThat(multiset).hasCount("kurt", 3);
-    assertFailureValue("value of", "multiset.count(kurt)");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(multiset).hasCount("kurt", 3));
+    assertFailureValue(e, "value of", "multiset.count(kurt)");
   }
 
-  private MultisetSubject expectFailureWhenTestingThat(Multiset<?> actual) {
-    return expectFailure.whenTesting().that(actual);
+  @Test
+  public void hasCountFailNegative() {
+    ImmutableMultiset<String> multiset = ImmutableMultiset.of("kurt", "kurt", "kluever");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(multiset).hasCount("kurt", -3));
+    assertFailureKeys(
+        e,
+        "expected an element count that is negative, but that is impossible",
+        "element",
+        "expected count",
+        "actual count",
+        "multiset was");
+    assertFailureValue(e, "element", "kurt");
+    assertFailureValue(e, "expected count", "-3");
+    assertFailureValue(e, "multiset was", "[kurt x 2, kluever]");
+  }
+
+  @Test
+  public void hasCountOnNullMultiset() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Multiset<?>) null).hasCount("kurt", 3));
+    assertFailureKeys(
+        e,
+        "cannot perform assertions on the contents of a null multiset",
+        "element",
+        "expected count");
+    assertFailureValue(e, "element", "kurt");
+    assertFailureValue(e, "expected count", "3");
   }
 }

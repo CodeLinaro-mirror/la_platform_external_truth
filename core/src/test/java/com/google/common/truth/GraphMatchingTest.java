@@ -15,12 +15,13 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.truth.GraphMatching.maximumCardinalityBipartiteMatching;
+import static com.google.common.truth.TestPlatform.isAndroid;
 import static com.google.common.truth.Truth.assertWithMessage;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableBiMap;
@@ -32,16 +33,14 @@ import java.util.ArrayDeque;
 import java.util.BitSet;
 import java.util.Deque;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
+import org.jspecify.annotations.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for {@link GraphMatching}.
- *
- * @author Pete Gillin
- */
+/** Tests for {@link GraphMatching}. */
 @RunWith(JUnit4.class)
 public final class GraphMatchingTest {
 
@@ -52,7 +51,7 @@ public final class GraphMatchingTest {
 
   @Test
   public void maximumCardinalityBipartiteMatching_exhaustive3x4() {
-    for (int edgeCombination = 1; edgeCombination < (1L << (3 * 4)); edgeCombination++) {
+    for (int edgeCombination = 1; edgeCombination < (1 << (3 * 4)); edgeCombination++) {
       TestInstance.fromBits(3, 4, intBits(edgeCombination)).testAgainstBruteForce();
     }
   }
@@ -60,10 +59,10 @@ public final class GraphMatchingTest {
   @Test
   @GwtIncompatible("slow")
   public void maximumCardinalityBipartiteMatching_exhaustive4x4() {
-    if (Platform.isAndroid()) {
+    if (isAndroid()) {
       return; // slow
     }
-    for (int edgeCombination = 1; edgeCombination < (1L << (4 * 4)); edgeCombination++) {
+    for (int edgeCombination = 1; edgeCombination < (1 << (4 * 4)); edgeCombination++) {
       TestInstance.fromBits(4, 4, intBits(edgeCombination)).testAgainstBruteForce();
     }
   }
@@ -71,10 +70,10 @@ public final class GraphMatchingTest {
   @Test
   @GwtIncompatible("slow")
   public void maximumCardinalityBipartiteMatching_exhaustive3x5() {
-    if (Platform.isAndroid()) {
+    if (isAndroid()) {
       return; // slow
     }
-    for (int edgeCombination = 1; edgeCombination < (1L << (3 * 5)); edgeCombination++) {
+    for (int edgeCombination = 1; edgeCombination < (1 << (3 * 5)); edgeCombination++) {
       TestInstance.fromBits(3, 5, intBits(edgeCombination)).testAgainstBruteForce();
     }
   }
@@ -82,10 +81,10 @@ public final class GraphMatchingTest {
   @Test
   @GwtIncompatible("slow")
   public void maximumCardinalityBipartiteMatching_exhaustive5x3() {
-    if (Platform.isAndroid()) {
+    if (isAndroid()) {
       return; // slow
     }
-    for (int edgeCombination = 1; edgeCombination < (1L << (5 * 3)); edgeCombination++) {
+    for (int edgeCombination = 1; edgeCombination < (1 << (5 * 3)); edgeCombination++) {
       TestInstance.fromBits(5, 3, intBits(edgeCombination)).testAgainstBruteForce();
     }
   }
@@ -119,7 +118,7 @@ public final class GraphMatchingTest {
   @Test
   @GwtIncompatible("slow")
   public void maximumCardinalityBipartiteMatching_randomDense8x8() {
-    if (Platform.isAndroid()) {
+    if (isAndroid()) {
       return; // slow
     }
     Random rng = new Random(0x5add1e5);
@@ -133,24 +132,16 @@ public final class GraphMatchingTest {
 
   @Test
   public void maximumCardinalityBipartiteMatching_failsWithNullLhs() {
-    ListMultimap<String, String> edges = LinkedListMultimap.create();
+    ListMultimap<@Nullable String, String> edges = LinkedListMultimap.create();
     edges.put(null, "R1");
-    try {
-      BiMap<String, String> unused = maximumCardinalityBipartiteMatching(edges);
-      fail("Should have thrown.");
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> maximumCardinalityBipartiteMatching(edges));
   }
 
   @Test
   public void maximumCardinalityBipartiteMatching_failsWithNullRhs() {
-    ListMultimap<String, String> edges = LinkedListMultimap.create();
+    ListMultimap<String, @Nullable String> edges = LinkedListMultimap.create();
     edges.put("L1", null);
-    try {
-      BiMap<String, String> unused = maximumCardinalityBipartiteMatching(edges);
-      fail("Should have thrown.");
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> maximumCardinalityBipartiteMatching(edges));
   }
 
   /** Representation of a bipartite graph to be used for testing. */
@@ -158,7 +149,7 @@ public final class GraphMatchingTest {
 
     /** Generates a test instance with an empty bipartite graph. */
     static TestInstance empty() {
-      return new TestInstance(ImmutableListMultimap.<String, String>of());
+      return new TestInstance(ImmutableListMultimap.of());
     }
 
     /**
@@ -299,7 +290,7 @@ public final class GraphMatchingTest {
        * empty. Fails if this cursor is invalid.
        */
       ImmutableBiMap<String, String> asBiMap() {
-        Preconditions.checkState(valid());
+        checkState(valid());
         return ImmutableBiMap.copyOf(selectedEdges);
       }
 
@@ -308,7 +299,7 @@ public final class GraphMatchingTest {
        * be positive (not zer). Fails if this cursor is invalid.
        */
       int size() {
-        Preconditions.checkState(valid());
+        checkState(valid());
         return selectedEdges.size();
       }
 
@@ -317,7 +308,7 @@ public final class GraphMatchingTest {
        * last. Fails if this cursor is invalid.
        */
       void advance() {
-        Preconditions.checkState(valid());
+        checkState(valid());
         // We essentially do a depth-first traversal through the possible matchings.
         // First we try to add an edge.
         Edge lastEdge = edgeStack.getLast();
@@ -381,9 +372,9 @@ public final class GraphMatchingTest {
          * already in the matching. Fails if this cursor is invalid.
          */
         void addToSelected() {
-          Preconditions.checkState(valid());
-          Preconditions.checkState(!selectedEdges.containsKey(lhsVertex()));
-          Preconditions.checkState(!selectedEdges.containsValue(rhsVertex()));
+          checkState(valid());
+          checkState(!selectedEdges.containsKey(lhsVertex()));
+          checkState(!selectedEdges.containsValue(rhsVertex()));
           selectedEdges.put(lhsVertex(), rhsVertex());
         }
 
@@ -392,10 +383,8 @@ public final class GraphMatchingTest {
          * Fails if this cursor is invalid.
          */
         void removeFromSelected() {
-          Preconditions.checkState(valid());
-          Preconditions.checkState(selectedEdges.containsKey(lhsVertex()));
-          Preconditions.checkState(selectedEdges.get(lhsVertex()).equals(rhsVertex()));
-          selectedEdges.remove(lhsVertex());
+          checkState(valid());
+          checkState(Objects.equals(selectedEdges.remove(lhsVertex()), rhsVertex()));
         }
 
         /**
@@ -404,7 +393,7 @@ public final class GraphMatchingTest {
          * already in it. Fails if this cursor is invalid.
          */
         void advance() {
-          Preconditions.checkState(valid());
+          checkState(valid());
           // We iterate over the possible edges in a lexicographical order with the LHS index as the
           // most significant part and the RHS index as the least significant. So we first try
           // advancing to the next RHS index for the current LHS index, and if we can't we advance

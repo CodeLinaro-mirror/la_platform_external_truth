@@ -22,26 +22,23 @@ import com.google.common.base.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for Guava {@link Optional} subjects.
+ * A subject for Guava {@link Optional} values.
  *
  * <p>If you are looking for a {@code java.util.Optional} subject, see {@link OptionalSubject}.
- *
- * @author Christian Gruber
  */
 public final class GuavaOptionalSubject extends Subject {
   @SuppressWarnings("NullableOptional") // Truth always accepts nulls, no matter the type
   private final @Nullable Optional<?> actual;
 
-  GuavaOptionalSubject(
+  private GuavaOptionalSubject(
       FailureMetadata metadata,
       @SuppressWarnings("NullableOptional") // Truth always accepts nulls, no matter the type
-          @Nullable Optional<?> actual,
-      @Nullable String typeDescription) {
-    super(metadata, actual, typeDescription);
+          @Nullable Optional<?> actual) {
+    super(metadata, actual);
     this.actual = actual;
   }
 
-  /** Fails if the {@link Optional}{@code <T>} is absent or the subject is null. */
+  /** Checks that the actual {@link Optional} contains a value. */
   public void isPresent() {
     if (actual == null) {
       failWithActual(simpleFact("expected present optional"));
@@ -50,7 +47,7 @@ public final class GuavaOptionalSubject extends Subject {
     }
   }
 
-  /** Fails if the {@link Optional}{@code <T>} is present or the subject is null. */
+  /** Checks that the actual {@link Optional} does not contain a value. */
   public void isAbsent() {
     if (actual == null) {
       failWithActual(simpleFact("expected absent optional"));
@@ -61,9 +58,9 @@ public final class GuavaOptionalSubject extends Subject {
   }
 
   /**
-   * Fails if the {@link Optional}{@code <T>} does not have the given value or the subject is null.
+   * Checks that the actual {@link Optional} contains the given value.
    *
-   * <p>To make more complex assertions on the optional's value split your assertion in two:
+   * <p>To make more complex assertions on the optional's value, split your assertion in two:
    *
    * <pre>{@code
    * assertThat(myOptional).isPresent();
@@ -72,14 +69,19 @@ public final class GuavaOptionalSubject extends Subject {
    */
   public void hasValue(@Nullable Object expected) {
     if (expected == null) {
-      throw new NullPointerException("Optional cannot have a null value.");
-    }
-    if (actual == null) {
+      failWithoutActual(
+          simpleFact("expected an optional with a null value, but that is impossible"),
+          fact("was", actual));
+    } else if (actual == null) {
       failWithActual("expected an optional with value", expected);
     } else if (!actual.isPresent()) {
       failWithoutActual(fact("expected to have value", expected), simpleFact("but was absent"));
     } else {
       checkNoNeedToDisplayBothValues("get()").that(actual.get()).isEqualTo(expected);
     }
+  }
+
+  static Factory<GuavaOptionalSubject, Optional<?>> guavaOptionals() {
+    return GuavaOptionalSubject::new;
   }
 }
