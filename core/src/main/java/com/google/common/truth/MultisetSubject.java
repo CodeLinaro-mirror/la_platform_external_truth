@@ -15,30 +15,45 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.simpleFact;
 
 import com.google.common.collect.Multiset;
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for {@link Multiset} subjects.
- *
- * @author Kurt Alfred Kluever
- */
+/** A subject for {@link Multiset} values. */
 public final class MultisetSubject extends IterableSubject {
 
   private final @Nullable Multiset<?> actual;
 
-  MultisetSubject(FailureMetadata metadata, @Nullable Multiset<?> multiset) {
-    super(metadata, multiset, /* typeDescriptionOverride= */ "multiset");
-    this.actual = multiset;
+  private MultisetSubject(FailureMetadata metadata, @Nullable Multiset<?> actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
-  /** Fails if the element does not have the given count. */
-  public final void hasCount(@Nullable Object element, int expectedCount) {
-    checkArgument(expectedCount >= 0, "expectedCount(%s) must be >= 0", expectedCount);
-    int actualCount = checkNotNull(actual).count(element);
-    check("count(%s)", element).that(actualCount).isEqualTo(expectedCount);
+  /**
+   * Checks that the actual multiset has exactly the given number of occurrences of the given
+   * element.
+   */
+  public void hasCount(@Nullable Object element, int count) {
+    if (actual == null) {
+      failWithoutActual(
+          simpleFact("cannot perform assertions on the contents of a null multiset"),
+          fact("element", element),
+          fact("expected count", count));
+    } else if (count < 0) {
+      failWithoutActual(
+          simpleFact("expected an element count that is negative, but that is impossible"),
+          fact("element", element),
+          fact("expected count", count),
+          fact("actual count", actual.count(element)),
+          actualValue("multiset was"));
+    } else {
+      check("count(%s)", element).that(actual.count(element)).isEqualTo(count);
+    }
+  }
+
+  static Factory<MultisetSubject, Multiset<?>> multisets() {
+    return MultisetSubject::new;
   }
 }

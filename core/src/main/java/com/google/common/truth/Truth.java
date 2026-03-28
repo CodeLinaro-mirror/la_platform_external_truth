@@ -15,8 +15,6 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multiset;
@@ -74,9 +72,6 @@ import org.jspecify.annotations.Nullable;
  * <p>The most common way to extend Truth is to write a custom {@link Subject}. (The other, much
  * less common way is to write a custom {@link FailureStrategy}.) For more information, visit those
  * types' docs.
- *
- * @author David Saff
- * @author Christian Gruber (cgruber@israfil.net)
  */
 public final class Truth {
   private Truth() {}
@@ -106,8 +101,8 @@ public final class Truth {
    * StandardSubjectBuilder#about about(...)}, as discussed in <a
    * href="https://truth.dev/faq#java8">this FAQ entry</a>.
    */
-  public static StandardSubjectBuilder assertWithMessage(@Nullable String messageToPrepend) {
-    return assert_().withMessage(messageToPrepend);
+  public static StandardSubjectBuilder assertWithMessage(@Nullable String message) {
+    return assert_().withMessage(message);
   }
 
   /**
@@ -126,13 +121,15 @@ public final class Truth {
    * @throws IllegalArgumentException if the number of placeholders in the format string does not
    *     equal the number of given arguments
    */
-  public static StandardSubjectBuilder assertWithMessage(String format, @Nullable Object... args) {
+  public static StandardSubjectBuilder assertWithMessage(
+          String format,
+      @Nullable Object... args) {
     return assert_().withMessage(format, args);
   }
 
   /**
-   * Given a factory for some {@code Subject} class, returns a builder whose {@code that(actual)}
-   * method creates instances of that class.
+   * Given a factory for some {@link Subject} class, returns a builder whose {@link
+   * SimpleSubjectBuilder#that that(actual)} method creates instances of that class.
    */
   public static <S extends Subject, T> SimpleSubjectBuilder<S, T> assertAbout(
       Subject.Factory<S, T> factory) {
@@ -149,19 +146,23 @@ public final class Truth {
     return assert_().about(factory);
   }
 
+  /** Begins an assertion about a {@link Comparable}. */
   public static <ComparableT extends Comparable<?>> ComparableSubject<ComparableT> assertThat(
       @Nullable ComparableT actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link BigDecimal}. */
   public static BigDecimalSubject assertThat(@Nullable BigDecimal actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about an {@link Object}. */
   public static Subject assertThat(@Nullable Object actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Class}. */
   @GwtIncompatible("ClassSubject.java")
   @J2ktIncompatible
   public static ClassSubject assertThat(@Nullable Class<?> actual) {
@@ -189,148 +190,174 @@ public final class Truth {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Long}. */
   public static LongSubject assertThat(@Nullable Long actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Double}. */
   public static DoubleSubject assertThat(@Nullable Double actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Float}. */
   public static FloatSubject assertThat(@Nullable Float actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about an {@link Integer}. */
   public static IntegerSubject assertThat(@Nullable Integer actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Boolean}. */
   public static BooleanSubject assertThat(@Nullable Boolean actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link String}. */
   public static StringSubject assertThat(@Nullable String actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about an {@link Iterable}. */
   public static IterableSubject assertThat(@Nullable Iterable<?> actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about an {@link Object} array. */
   @SuppressWarnings("AvoidObjectArrays")
   public static <T extends @Nullable Object> ObjectArraySubject<T> assertThat(
       T @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code boolean} array. */
   public static PrimitiveBooleanArraySubject assertThat(boolean @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code short} array. */
   public static PrimitiveShortArraySubject assertThat(short @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about an {@code int} array. */
   public static PrimitiveIntArraySubject assertThat(int @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code long} array. */
   public static PrimitiveLongArraySubject assertThat(long @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code byte} array. */
   public static PrimitiveByteArraySubject assertThat(byte @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code char} array. */
   public static PrimitiveCharArraySubject assertThat(char @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code float} array. */
   public static PrimitiveFloatArraySubject assertThat(float @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@code double} array. */
   public static PrimitiveDoubleArraySubject assertThat(double @Nullable [] actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a Guava {@link com.google.common.base.Optional}. */
   public static GuavaOptionalSubject assertThat(
       com.google.common.base.@Nullable Optional<?> actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Map}. */
   public static MapSubject assertThat(@Nullable Map<?, ?> actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Multimap}. */
   public static MultimapSubject assertThat(@Nullable Multimap<?, ?> actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Multiset}. */
   public static MultisetSubject assertThat(@Nullable Multiset<?> actual) {
     return assert_().that(actual);
   }
 
+  /** Begins an assertion about a {@link Table}. */
   public static TableSubject assertThat(@Nullable Table<?, ?, ?> actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about an {@link Optional}.
+   *
    * @since 1.3.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings({
-    "Java7ApiChecker", // no more dangerous than wherever the user got the Optional
-    "NullableOptional", // Truth always accepts nulls, no matter the type
-  })
+  @SuppressWarnings("NullableOptional") // Truth always accepts nulls, no matter the type
   public static OptionalSubject assertThat(@Nullable Optional<?> actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about an {@link OptionalInt}.
+   *
    * @since 1.3.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous than wherever the user got the Stream
   public static OptionalIntSubject assertThat(@Nullable OptionalInt actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about an {@link OptionalLong}.
+   *
    * @since 1.4.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous than wherever the user got the Stream
   public static OptionalLongSubject assertThat(@Nullable OptionalLong actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about an {@link OptionalDouble}.
+   *
    * @since 1.4.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous than wherever the user got the Stream
   public static OptionalDoubleSubject assertThat(@Nullable OptionalDouble actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about a {@link Stream}.
+   *
    * @since 1.4.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous than wherever the user got the Stream
   public static StreamSubject assertThat(@Nullable Stream<?> actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about an {@link IntStream}.
+   *
    * @since 1.4.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous than wherever the user got the Stream
   public static IntStreamSubject assertThat(@Nullable IntStream actual) {
     return assert_().that(actual);
   }
 
   /**
+   * Begins an assertion about a {@link LongStream}.
+   *
    * @since 1.4.0 (present in {@link Truth8} since before 1.0)
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous than wherever the user got the Stream
   public static LongStreamSubject assertThat(@Nullable LongStream actual) {
     return assert_().that(actual);
   }
@@ -338,6 +365,8 @@ public final class Truth {
   // TODO(b/64757353): Add support for DoubleStream?
 
   /**
+   * Begins an assertion about a {@link Path}.
+   *
    * @since 1.4.0 (present in {@link Truth8} since before 1.0)
    */
   @GwtIncompatible
@@ -345,36 +374,5 @@ public final class Truth {
   @J2ktIncompatible
   public static PathSubject assertThat(@Nullable Path actual) {
     return assert_().that(actual);
-  }
-
-  /**
-   * An {@code AssertionError} that omits "java.lang.AssertionError:" from the beginning of its
-   * toString() representation.
-   */
-  // TODO(cpovirk): Consider eliminating this, adding its functionality to AssertionErrorWithFacts?
-  @SuppressWarnings("OverrideThrowableToString") // We intentionally replace the normal format.
-  static final class SimpleAssertionError extends AssertionError {
-    private SimpleAssertionError(String message, @Nullable Throwable cause) {
-      super(checkNotNull(message), cause);
-    }
-
-    static SimpleAssertionError create(String message, @Nullable Throwable cause) {
-      return new SimpleAssertionError(message, cause);
-    }
-
-    static SimpleAssertionError createWithNoStack(String message, @Nullable Throwable cause) {
-      SimpleAssertionError error = create(message, cause);
-      error.setStackTrace(new StackTraceElement[0]);
-      return error;
-    }
-
-    static SimpleAssertionError createWithNoStack(String message) {
-      return createWithNoStack(message, /* cause= */ null);
-    }
-
-    @Override
-    public String toString() {
-      return checkNotNull(getLocalizedMessage());
-    }
   }
 }

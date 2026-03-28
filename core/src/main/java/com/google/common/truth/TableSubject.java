@@ -15,8 +15,6 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
 
@@ -25,107 +23,175 @@ import com.google.common.collect.Table.Cell;
 import com.google.common.collect.Tables;
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for {@link Table} subjects.
- *
- * @author Kurt Alfred Kluever
- */
+/** A subject for {@link Table} values. */
 public final class TableSubject extends Subject {
   private final @Nullable Table<?, ?, ?> actual;
 
-  TableSubject(FailureMetadata metadata, @Nullable Table<?, ?, ?> table) {
-    super(metadata, table);
-    this.actual = table;
+  private TableSubject(FailureMetadata metadata, @Nullable Table<?, ?, ?> actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
-  /** Fails if the table is not empty. */
+  /** Checks that the actual table is empty. */
   public void isEmpty() {
-    if (!checkNotNull(actual).isEmpty()) {
+    if (actual == null) {
+      failWithActual(simpleFact("expected an empty table"));
+    } else if (!actual.isEmpty()) {
       failWithActual(simpleFact("expected to be empty"));
     }
   }
 
-  /** Fails if the table is empty. */
+  /** Checks that the actual table is not empty. */
   public void isNotEmpty() {
-    if (checkNotNull(actual).isEmpty()) {
+    if (actual == null) {
+      failWithActual(simpleFact("expected a nonempty table"));
+    } else if (actual.isEmpty()) {
       failWithoutActual(simpleFact("expected not to be empty"));
     }
   }
 
-  /** Fails if the table does not have the given size. */
-  public final void hasSize(int expectedSize) {
-    checkArgument(expectedSize >= 0, "expectedSize(%s) must be >= 0", expectedSize);
-    check("size()").that(checkNotNull(actual).size()).isEqualTo(expectedSize);
+  /** Checks that the actual table has the given size. */
+  public void hasSize(int size) {
+    if (actual == null) {
+      failWithActual("expected a table with size", size);
+    } else if (size < 0) {
+      failWithoutActual(
+          simpleFact("expected a table with a negative size, but that is impossible"),
+          fact("expected size", size),
+          fact("actual size", actual.size()),
+          tableWas());
+    } else {
+      check("size()").that(actual.size()).isEqualTo(size);
+    }
   }
 
-  /** Fails if the table does not contain a mapping for the given row key and column key. */
+  /** Checks that the actual table contains a mapping for the given row key and column key. */
   public void contains(@Nullable Object rowKey, @Nullable Object columnKey) {
-    if (!checkNotNull(actual).contains(rowKey, columnKey)) {
+    if (actual == null || !actual.contains(rowKey, columnKey)) {
       /*
        * TODO(cpovirk): Consider including information about whether any cell with the given row
        * *or* column was present.
        */
       failWithActual(
-          simpleFact("expected to contain mapping for row-column key pair"),
+          simpleFact(
+              actual == null
+                  ? "expected a table that contains a mapping for row-column key pair"
+                  : "expected to contain mapping for row-column key pair"),
           fact("row key", rowKey),
           fact("column key", columnKey));
     }
   }
 
-  /** Fails if the table contains a mapping for the given row key and column key. */
+  /**
+   * Checks that the actual table does not contain a mapping for the given row key and column key.
+   */
   public void doesNotContain(@Nullable Object rowKey, @Nullable Object columnKey) {
-    if (checkNotNull(actual).contains(rowKey, columnKey)) {
+    if (actual == null) {
+      failWithActual(
+          simpleFact("expected a table that does not contain a mapping for row-column key pair"),
+          fact("row key", rowKey),
+          fact("column key", columnKey));
+    } else if (actual.contains(rowKey, columnKey)) {
       failWithoutActual(
           simpleFact("expected not to contain mapping for row-column key pair"),
           fact("row key", rowKey),
           fact("column key", columnKey),
           fact("but contained value", actual.get(rowKey, columnKey)),
-          fact("full contents", actual));
+          fullContents());
     }
   }
 
-  /** Fails if the table does not contain the given cell. */
+  /** Checks that the actual table contains the given cell. */
   public void containsCell(
-      @Nullable Object rowKey, @Nullable Object colKey, @Nullable Object value) {
+      @Nullable Object rowKey, @Nullable Object columnKey, @Nullable Object value) {
     containsCell(
         Tables.<@Nullable Object, @Nullable Object, @Nullable Object>immutableCell(
-            rowKey, colKey, value));
+            rowKey, columnKey, value));
   }
 
-  /** Fails if the table does not contain the given cell. */
-  public void containsCell(Cell<?, ?, ?> cell) {
-    checkNotNull(cell);
-    checkNoNeedToDisplayBothValues("cellSet()").that(checkNotNull(actual).cellSet()).contains(cell);
+  /** Checks that the actual table contains the given cell. */
+  public void containsCell(@Nullable Cell<?, ?, ?> cell) {
+    if (cell == null) {
+      failWithoutActual(
+          simpleFact("expected to contain a null cell, but that is impossible"), tableWas());
+    } else if (actual == null) {
+      failWithActual(
+          simpleFact("expected a table that contains the given cell"),
+          fact("row key", cell.getRowKey()),
+          fact("column key", cell.getColumnKey()),
+          fact("value", cell.getValue()));
+    } else if (actual.contains(cell.getRowKey(), cell.getColumnKey())) {
+      // TODO(cpovirk): For a cell that exists but has a null value, consider a clarification like:
+      // "key is present but with a different value" (from MapSubject.containsEntry)
+      check("get(%s, %s)", cell.getRowKey(), cell.getColumnKey())
+          .that(actual.get(cell.getRowKey(), cell.getColumnKey()))
+          .isEqualTo(cell.getValue());
+    } else {
+      checkNoNeedToDisplayBothValues("cellSet()").that(actual.cellSet()).contains(cell);
+    }
   }
 
-  /** Fails if the table contains the given cell. */
+  /** Checks that the actual table does not contain the given cell. */
   public void doesNotContainCell(
-      @Nullable Object rowKey, @Nullable Object colKey, @Nullable Object value) {
+      @Nullable Object rowKey, @Nullable Object columnKey, @Nullable Object value) {
     doesNotContainCell(
         Tables.<@Nullable Object, @Nullable Object, @Nullable Object>immutableCell(
-            rowKey, colKey, value));
+            rowKey, columnKey, value));
   }
 
-  /** Fails if the table contains the given cell. */
-  public void doesNotContainCell(Cell<?, ?, ?> cell) {
-    checkNotNull(cell);
-    checkNoNeedToDisplayBothValues("cellSet()")
-        .that(checkNotNull(actual).cellSet())
-        .doesNotContain(cell);
+  /** Checks that the actual table does not contain the given cell. */
+  public void doesNotContainCell(@Nullable Cell<?, ?, ?> cell) {
+    if (cell == null) {
+      failWithoutActual(
+          simpleFact("refusing to check for a null cell because tables never contain null cells"),
+          tableWas());
+    } else if (actual == null) {
+      failWithActual(
+          simpleFact("expected a table that does not contain the given cell"),
+          fact("row key", cell.getRowKey()),
+          fact("column key", cell.getColumnKey()),
+          fact("value", cell.getValue()));
+    } else {
+      checkNoNeedToDisplayBothValues("cellSet()").that(actual.cellSet()).doesNotContain(cell);
+    }
   }
 
-  /** Fails if the table does not contain the given row key. */
+  /** Checks that the actual table contains the given row key. */
   public void containsRow(@Nullable Object rowKey) {
-    check("rowKeySet()").that(checkNotNull(actual).rowKeySet()).contains(rowKey);
+    if (actual == null) {
+      failWithActual("expected a table with row", rowKey);
+    } else {
+      check("rowKeySet()").that(actual.rowKeySet()).contains(rowKey);
+    }
   }
 
-  /** Fails if the table does not contain the given column key. */
+  /** Checks that the actual table contains the given column key. */
   public void containsColumn(@Nullable Object columnKey) {
-    check("columnKeySet()").that(checkNotNull(actual).columnKeySet()).contains(columnKey);
+    if (actual == null) {
+      failWithActual("expected a table with column", columnKey);
+    } else {
+      check("columnKeySet()").that(actual.columnKeySet()).contains(columnKey);
+    }
   }
 
-  /** Fails if the table does not contain the given value. */
+  /** Checks that the actual table contains the given value. */
   public void containsValue(@Nullable Object value) {
-    check("values()").that(checkNotNull(actual).values()).contains(value);
+    if (actual == null) {
+      failWithActual("expected a table with value", value);
+    } else {
+      check("values()").that(actual.values()).contains(value);
+    }
+  }
+
+  private Fact fullContents() {
+    return actualValue("full contents");
+  }
+
+  private Fact tableWas() {
+    return actualValue("table was");
+  }
+
+  static Factory<TableSubject, Table<?, ?, ?>> tables() {
+    return TableSubject::new;
   }
 }

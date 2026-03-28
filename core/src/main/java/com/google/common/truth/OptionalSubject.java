@@ -22,29 +22,26 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for Java 8 {@link Optional} subjects.
+ * A subject for {@link Optional} values.
  *
- * @author Christian Gruber
  * @since 1.3.0 (previously part of {@code truth-java8-extension})
  */
-@SuppressWarnings("Java7ApiChecker") // used only from APIs with Java 8 in their signatures
 @IgnoreJRERequirement
 public final class OptionalSubject extends Subject {
   @SuppressWarnings("NullableOptional") // Truth always accepts nulls, no matter the type
   private final @Nullable Optional<?> actual;
 
-  OptionalSubject(
+  private OptionalSubject(
       FailureMetadata failureMetadata,
       @SuppressWarnings("NullableOptional") // Truth always accepts nulls, no matter the type
-          @Nullable Optional<?> subject,
-      @Nullable String typeDescription) {
-    super(failureMetadata, subject, typeDescription);
-    this.actual = subject;
+          @Nullable Optional<?> actual) {
+    super(failureMetadata, actual);
+    this.actual = actual;
   }
 
   // TODO(cpovirk): Consider making OptionalIntSubject and OptionalLongSubject delegate to this.
 
-  /** Fails if the {@link Optional}{@code <T>} is empty or the subject is null. */
+  /** Checks that the actual {@link Optional} contains a value. */
   public void isPresent() {
     if (actual == null) {
       failWithActual(simpleFact("expected present optional"));
@@ -53,7 +50,7 @@ public final class OptionalSubject extends Subject {
     }
   }
 
-  /** Fails if the {@link Optional}{@code <T>} is present or the subject is null. */
+  /** Checks that the actual {@link Optional} does not contain a value. */
   public void isEmpty() {
     if (actual == null) {
       failWithActual(simpleFact("expected empty optional"));
@@ -64,9 +61,9 @@ public final class OptionalSubject extends Subject {
   }
 
   /**
-   * Fails if the {@link Optional}{@code <T>} does not have the given value or the subject is null.
+   * Checks that the actual {@link Optional} contains the given value.
    *
-   * <p>To make more complex assertions on the optional's value split your assertion in two:
+   * <p>To make more complex assertions on the optional's value, split your assertion in two:
    *
    * <pre>{@code
    * assertThat(myOptional).isPresent();
@@ -75,9 +72,10 @@ public final class OptionalSubject extends Subject {
    */
   public void hasValue(@Nullable Object expected) {
     if (expected == null) {
-      throw new NullPointerException("Optional cannot have a null value.");
-    }
-    if (actual == null) {
+      failWithoutActual(
+          simpleFact("expected an optional with a null value, but that is impossible"),
+          fact("was", actual));
+    } else if (actual == null) {
       failWithActual("expected an optional with value", expected);
     } else if (!actual.isPresent()) {
       failWithoutActual(fact("expected to have value", expected), simpleFact("but was empty"));
@@ -98,6 +96,6 @@ public final class OptionalSubject extends Subject {
   @Deprecated
   @SuppressWarnings("InlineMeSuggester") // We want users to remove the surrounding call entirely.
   public static Factory<OptionalSubject, Optional<?>> optionals() {
-    return (metadata, subject) -> new OptionalSubject(metadata, subject, "optional");
+    return OptionalSubject::new;
   }
 }

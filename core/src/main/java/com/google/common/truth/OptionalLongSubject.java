@@ -22,25 +22,20 @@ import java.util.OptionalLong;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for Java 8 {@link OptionalLong} subjects.
+ * A subject for {@link OptionalLong} values.
  *
- * @author Ben Douglass
  * @since 1.3.0 (previously part of {@code truth-java8-extension})
  */
-@SuppressWarnings("Java7ApiChecker") // used only from APIs with Java 8 in their signatures
 @IgnoreJRERequirement
 public final class OptionalLongSubject extends Subject {
   private final @Nullable OptionalLong actual;
 
-  OptionalLongSubject(
-      FailureMetadata failureMetadata,
-      @Nullable OptionalLong subject,
-      @Nullable String typeDescription) {
-    super(failureMetadata, subject, typeDescription);
-    this.actual = subject;
+  private OptionalLongSubject(FailureMetadata failureMetadata, @Nullable OptionalLong actual) {
+    super(failureMetadata, actual);
+    this.actual = actual;
   }
 
-  /** Fails if the {@link OptionalLong} is empty or the subject is null. */
+  /** Checks that the actual {@link OptionalLong} contains a value. */
   public void isPresent() {
     if (actual == null) {
       failWithActual(simpleFact("expected present optional"));
@@ -49,7 +44,7 @@ public final class OptionalLongSubject extends Subject {
     }
   }
 
-  /** Fails if the {@link OptionalLong} is present or the subject is null. */
+  /** Checks that the actual {@link OptionalLong} does not contain a value. */
   public void isEmpty() {
     if (actual == null) {
       failWithActual(simpleFact("expected empty optional"));
@@ -61,8 +56,8 @@ public final class OptionalLongSubject extends Subject {
   }
 
   /**
-   * Fails if the {@link OptionalLong} does not have the given value or the subject is null. More
-   * sophisticated comparisons can be done using {@code assertThat(optional.getAsLong())…}.
+   * Checks that the actual {@link OptionalLong} contains the given value. More sophisticated
+   * comparisons can be done using {@code assertThat(optional.getAsLong())…}.
    */
   public void hasValue(long expected) {
     if (actual == null) {
@@ -86,6 +81,6 @@ public final class OptionalLongSubject extends Subject {
   @Deprecated
   @SuppressWarnings("InlineMeSuggester") // We want users to remove the surrounding call entirely.
   public static Factory<OptionalLongSubject, OptionalLong> optionalLongs() {
-    return (metadata, subject) -> new OptionalLongSubject(metadata, subject, "optionalLong");
+    return OptionalLongSubject::new;
   }
 }

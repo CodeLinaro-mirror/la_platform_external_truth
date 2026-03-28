@@ -19,28 +19,26 @@ package com.google.common.truth;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.truth.Correspondence.tolerance;
+import static com.google.common.truth.Fact.simpleFact;
+import static java.lang.Double.doubleToLongBits;
+import static java.lang.Math.abs;
 
 import com.google.common.primitives.Doubles;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Arrays;
 import org.jspecify.annotations.Nullable;
 
-/**
- * A Subject for {@code double[]}.
- *
- * @author Christian Gruber (cgruber@israfil.net)
- */
-public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
+/** A subject for {@code double[]} values. */
+public final class PrimitiveDoubleArraySubject extends Subject {
   private final double @Nullable [] actual;
 
-  PrimitiveDoubleArraySubject(
-      FailureMetadata metadata, double @Nullable [] o, @Nullable String typeDescription) {
-    super(metadata, o, typeDescription);
-    this.actual = o;
+  private PrimitiveDoubleArraySubject(FailureMetadata metadata, double @Nullable [] actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
   /**
-   * A check that the actual array and {@code expected} are arrays of the same length and type,
+   * Checks that the actual array and {@code expected} are arrays of the same length and type,
    * containing elements such that each element in {@code expected} is equal to each element in the
    * actual array, and in the same position, with element equality defined the same way that {@link
    * Arrays#equals(double[], double[])} and {@link Double#equals(Object)} define it (which is
@@ -49,11 +47,9 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
    * {@link #usingTolerance} with a suitable tolerance in that case, e.g. {@code
    * assertThat(actualArray).usingTolerance(1.0e-10).containsExactly(expectedArray).inOrder()}.
    * (Remember that the exact result of floating point arithmetic is sensitive to apparently trivial
-   * changes such as replacing {@code (a + b) + c} with {@code a + (b + c)}, and that unless {@code
-   * strictfp} is in force even the result of {@code (a + b) + c} is sensitive to the JVM's choice
-   * of precision for the intermediate result.) This method is recommended when the code under test
-   * is specified as either copying values without modification from its input or returning
-   * well-defined literal or constant values.
+   * changes such as replacing {@code (a + b) + c} with {@code a + (b + c)}.) This method is
+   * recommended when the code under test is specified as either copying values without modification
+   * from its input or returning well-defined literal or constant values.
    *
    * <ul>
    *   <li>It considers {@link Double#POSITIVE_INFINITY}, {@link Double#NEGATIVE_INFINITY}, and
@@ -70,7 +66,7 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
   }
 
   /**
-   * A check that the actual array and {@code expected} are not arrays of the same length and type,
+   * Checks that the actual array and {@code expected} are not arrays of the same length and type,
    * containing elements such that each element in {@code expected} is equal to each element in the
    * actual array, and in the same position, with element equality defined the same way that {@link
    * Arrays#equals(double[], double[])} and {@link Double#equals(Object)} define it (which is
@@ -84,8 +80,8 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
    * </ul>
    */
   @Override
-  public void isNotEqualTo(@Nullable Object expected) {
-    super.isNotEqualTo(expected);
+  public void isNotEqualTo(@Nullable Object other) {
+    super.isNotEqualTo(other);
   }
 
   /**
@@ -113,35 +109,34 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
    *     Double#NaN}, {@link Double#POSITIVE_INFINITY}, or negative, including {@code -0.0}
    */
   public DoubleArrayAsIterable usingTolerance(double tolerance) {
-    return new DoubleArrayAsIterable(tolerance(tolerance), iterableSubject());
+    if (actual == null) {
+      failWithoutActual(simpleFact("cannot perform assertions on the contents of a null array"));
+      return ignoreCheck().that(new double[0]).usingTolerance(tolerance);
+    }
+    return DoubleArrayAsIterable.create(tolerance(tolerance), iterableSubject(actual));
   }
 
   private static final Correspondence<Double, Number> EXACT_EQUALITY_CORRESPONDENCE =
       Correspondence.from(
-          // If we were allowed lambdas, this would be:
-          // (a, e) -> Double.doubleToLongBits(a) == Double.doubleToLongBits(checkedToDouble(e)),
-          new Correspondence.BinaryPredicate<Double, Number>() {
-            @Override
-            public boolean apply(Double actual, Number expected) {
-              return Double.doubleToLongBits(actual)
-                  == Double.doubleToLongBits(checkedToDouble(expected));
-            }
-          },
+          (a, e) -> doubleToLongBits(a) == doubleToLongBits(checkedToDouble(e)),
           "is exactly equal to");
 
   private static double checkedToDouble(Number expected) {
     checkNotNull(expected);
-    checkArgument(
+    boolean okType =
         expected instanceof Double
             || expected instanceof Float
             || expected instanceof Integer
-            || expected instanceof Long,
-        "Expected value in assertion using exact double equality was of unsupported type %s "
-            + "(it may not have an exact double representation)",
-        expected.getClass());
+            || expected instanceof Long;
+    if (!okType) {
+      throw new IllegalArgumentException(
+          "Expected value in assertion using exact double equality was of unsupported type "
+              + SubjectUtils.longName(expected.getClass())
+              + " (it may not have an exact double representation)");
+    }
     if (expected instanceof Long) {
       checkArgument(
-          Math.abs((Long) expected) <= 1L << 53,
+          abs((Long) expected) <= 1L << 53,
           "Expected value %s in assertion using exact double equality was a long with an absolute "
               + "value greater than 2^52 which has no exact double representation",
           expected);
@@ -156,11 +151,10 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
    * This method is <i>not</i> recommended when the code under test is doing any kind of arithmetic:
    * use {@link #usingTolerance} with a suitable tolerance in that case. (Remember that the exact
    * result of floating point arithmetic is sensitive to apparently trivial changes such as
-   * replacing {@code (a + b) + c} with {@code a + (b + c)}, and that unless {@code strictfp} is in
-   * force even the result of {@code (a + b) + c} is sensitive to the JVM's choice of precision for
-   * the intermediate result.) This method is recommended when the code under test is specified as
-   * either copying a value without modification from its input or returning a well-defined literal
-   * or constant value. The check is actually executed by continuing the method chain. For example:
+   * replacing {@code (a + b) + c} with {@code a + (b + c)}.) This method is recommended when the
+   * code under test is specified as either copying a value without modification from its input or
+   * returning a well-defined literal or constant value. The check is actually executed by
+   * continuing the method chain. For example:
    *
    * <pre>{@code
    * assertThat(actualDoubleArray).usingExactEquality().contains(3.14159);
@@ -183,12 +177,31 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
    * </ul>
    */
   public DoubleArrayAsIterable usingExactEquality() {
-    return new DoubleArrayAsIterable(EXACT_EQUALITY_CORRESPONDENCE, iterableSubject());
+    if (actual == null) {
+      failWithoutActual(simpleFact("cannot perform assertions on the contents of a null array"));
+      return ignoreCheck().that(new double[0]).usingExactEquality();
+    }
+    return DoubleArrayAsIterable.create(EXACT_EQUALITY_CORRESPONDENCE, iterableSubject(actual));
+  }
+
+  /** Checks that the actual array is empty (i.e., that {@code array.length == 0}). */
+  public void isEmpty() {
+    arrayIsEmptyImpl();
+  }
+
+  /** Checks that the actual array is not empty (i.e., that {@code array.length > 0}). */
+  public void isNotEmpty() {
+    arrayIsNotEmptyImpl();
+  }
+
+  /** Checks that the actual array has the given length. */
+  public void hasLength(int length) {
+    arrayHasLengthImpl(length);
   }
 
   /**
    * A partially specified check for doing assertions on the array similar to the assertions
-   * supported for {@link Iterable} subjects, in which the elements of the array under test are
+   * supported for {@link Iterable} values, in which the elements of the array under test are
    * compared to expected elements using either exact or tolerant double equality: see {@link
    * #usingExactEquality} and {@link #usingTolerance}. Call methods on this object to actually
    * execute the check.
@@ -199,7 +212,7 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
   public static final class DoubleArrayAsIterable
       extends IterableSubject.UsingCorrespondence<Double, Number> {
 
-    DoubleArrayAsIterable(
+    private DoubleArrayAsIterable(
         Correspondence<? super Double, Number> correspondence, IterableSubject subject) {
       super(subject, correspondence);
     }
@@ -229,41 +242,51 @@ public final class PrimitiveDoubleArraySubject extends AbstractArraySubject {
     public void containsNoneOf(double[] excluded) {
       containsNoneIn(Doubles.asList(excluded));
     }
+
+    static DoubleArrayAsIterable create(
+        Correspondence<? super Double, Number> correspondence, IterableSubject subject) {
+      return new DoubleArrayAsIterable(correspondence, subject);
+    }
   }
 
-  private IterableSubject iterableSubject() {
+  private IterableSubject iterableSubject(double[] actual) {
     return checkNoNeedToDisplayBothValues("asList()")
-        .about(iterablesWithCustomDoubleToString())
-        .that(Doubles.asList(checkNotNull(actual)));
+        .about(IterableSubjectWithInheritedToString.iterablesWithCustomDoubleToString(this))
+        .that(Doubles.asList(actual));
   }
 
-  /*
-   * TODO(cpovirk): Should we make Doubles.asList().toString() smarter rather than do all this?
-   *
-   * TODO(cpovirk): Or find a general solution for this and MultimapSubject.IterableEntries. But
-   * note that here we don't use _exactly_ PrimitiveDoubleArraySubject.this.toString(), as that
-   * contains "double[]." Or maybe we should stop including that in
-   * PrimitiveDoubleArraySubject.this.toString(), too, someday?
-   */
-  private Factory<IterableSubject, Iterable<?>> iterablesWithCustomDoubleToString() {
-    return new Factory<IterableSubject, Iterable<?>>() {
-      @Override
-      public IterableSubject createSubject(FailureMetadata metadata, @Nullable Iterable<?> actual) {
-        return new IterableSubjectWithInheritedToString(metadata, actual);
-      }
-    };
-  }
+  private static final class IterableSubjectWithInheritedToString extends IterableSubject {
+    private final PrimitiveDoubleArraySubject arraySubject;
 
-  private final class IterableSubjectWithInheritedToString extends IterableSubject {
-
-    IterableSubjectWithInheritedToString(FailureMetadata metadata, @Nullable Iterable<?> actual) {
+    private IterableSubjectWithInheritedToString(
+        FailureMetadata metadata,
+        @Nullable Iterable<?> actual,
+        PrimitiveDoubleArraySubject arraySubject) {
       super(metadata, actual);
+      this.arraySubject = arraySubject;
     }
 
     @Override
     protected String actualCustomStringRepresentation() {
-      return PrimitiveDoubleArraySubject.this
-          .actualCustomStringRepresentationForPackageMembersToCall();
+      return arraySubject.actualCustomStringRepresentationForPackageMembersToCall();
     }
+
+    /*
+     * TODO(cpovirk): Should we make Doubles.asList().toString() smarter rather than do all this?
+     *
+     * TODO(cpovirk): Or find a general solution for this and MultimapSubject.IterableEntries. But
+     * note that here we don't use _exactly_ PrimitiveDoubleArraySubject.this.toString(), as that
+     * contains "double[]." Or maybe we should stop including that in
+     * PrimitiveDoubleArraySubject.this.toString(), too, someday?
+     */
+    static Factory<IterableSubject, Iterable<?>> iterablesWithCustomDoubleToString(
+        PrimitiveDoubleArraySubject arraySubject) {
+      return (metadata, actual) ->
+          new IterableSubjectWithInheritedToString(metadata, actual, arraySubject);
+    }
+  }
+
+  static Factory<PrimitiveDoubleArraySubject, double[]> doubleArrays() {
+    return PrimitiveDoubleArraySubject::new;
   }
 }

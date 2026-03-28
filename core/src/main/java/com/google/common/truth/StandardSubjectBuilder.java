@@ -16,6 +16,38 @@
 package com.google.common.truth;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.truth.BigDecimalSubject.bigDecimals;
+import static com.google.common.truth.BooleanSubject.booleans;
+import static com.google.common.truth.ClassSubject.classes;
+import static com.google.common.truth.DoubleSubject.doubles;
+import static com.google.common.truth.FloatSubject.floats;
+import static com.google.common.truth.GuavaOptionalSubject.guavaOptionals;
+import static com.google.common.truth.IntStreamSubject.intStreams;
+import static com.google.common.truth.IntegerSubject.integers;
+import static com.google.common.truth.IterableSubject.iterables;
+import static com.google.common.truth.LongStreamSubject.longStreams;
+import static com.google.common.truth.LongSubject.longs;
+import static com.google.common.truth.MapSubject.maps;
+import static com.google.common.truth.MultimapSubject.multimaps;
+import static com.google.common.truth.MultisetSubject.multisets;
+import static com.google.common.truth.OptionalDoubleSubject.optionalDoubles;
+import static com.google.common.truth.OptionalIntSubject.optionalInts;
+import static com.google.common.truth.OptionalLongSubject.optionalLongs;
+import static com.google.common.truth.OptionalSubject.optionals;
+import static com.google.common.truth.PathSubject.paths;
+import static com.google.common.truth.PrimitiveBooleanArraySubject.booleanArrays;
+import static com.google.common.truth.PrimitiveByteArraySubject.byteArrays;
+import static com.google.common.truth.PrimitiveCharArraySubject.charArrays;
+import static com.google.common.truth.PrimitiveDoubleArraySubject.doubleArrays;
+import static com.google.common.truth.PrimitiveFloatArraySubject.floatArrays;
+import static com.google.common.truth.PrimitiveIntArraySubject.intArrays;
+import static com.google.common.truth.PrimitiveLongArraySubject.longArrays;
+import static com.google.common.truth.PrimitiveShortArraySubject.shortArrays;
+import static com.google.common.truth.StreamSubject.streams;
+import static com.google.common.truth.StringSubject.strings;
+import static com.google.common.truth.Subject.objects;
+import static com.google.common.truth.TableSubject.tables;
+import static com.google.common.truth.ThrowableSubject.throwables;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
@@ -40,8 +72,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <ul>
  *   <li>Set an optional message with {@link #withMessage}.
- *   <li>Specify the type of {@code Subject} to create with {@link #about(Subject.Factory)}.
- *   <li>For the types of {@code Subject} built into Truth, directly specify the value under test
+ *   <li>Specify the type of {@link Subject} to create with {@link #about(Subject.Factory)}.
+ *   <li>For the types of {@link Subject} built into Truth, directly specify the value under test
  *       with {@link #that(Object)}.
  * </ul>
  *
@@ -55,196 +87,193 @@ import org.jspecify.annotations.Nullable;
  */
 public class StandardSubjectBuilder {
   /**
-   * Returns a new instance that invokes the given {@code FailureStrategy} when a check fails. Most
+   * Returns a new instance that invokes the given {@link FailureStrategy} when a check fails. Most
    * users should not need this. If you think you do, see the documentation on {@link
    * FailureStrategy}.
    */
-  public static StandardSubjectBuilder forCustomFailureStrategy(FailureStrategy failureStrategy) {
-    return new StandardSubjectBuilder(FailureMetadata.forFailureStrategy(failureStrategy));
+  public static StandardSubjectBuilder forCustomFailureStrategy(FailureStrategy strategy) {
+    return forCustomFailureStrategy(strategy, /* suppressInferDescription= */ false);
+  }
+
+  static StandardSubjectBuilder forCustomFailureStrategy(
+      FailureStrategy strategy, boolean suppressInferDescription) {
+    return new StandardSubjectBuilder(
+        FailureMetadata.forFailureStrategy(strategy, suppressInferDescription));
   }
 
   private final FailureMetadata metadataDoNotReferenceDirectly;
 
+  /**
+   * Constructor for use by {@link Expect}. To create an instance of {@link StandardSubjectBuilder},
+   * use {@link #forCustomFailureStrategy}.
+   */
   StandardSubjectBuilder(FailureMetadata metadata) {
     this.metadataDoNotReferenceDirectly = checkNotNull(metadata);
   }
 
   public final <ComparableT extends Comparable<?>> ComparableSubject<ComparableT> that(
       @Nullable ComparableT actual) {
-    return new ComparableSubject<ComparableT>(metadata(), actual) {};
+    return about(ComparableSubject.<ComparableT>comparables()).that(actual);
   }
 
   public final BigDecimalSubject that(@Nullable BigDecimal actual) {
-    return new BigDecimalSubject(metadata(), actual);
+    return about(bigDecimals()).that(actual);
   }
 
   public final Subject that(@Nullable Object actual) {
-    return new Subject(metadata(), actual);
+    return about(objects()).that(actual);
   }
 
   @GwtIncompatible("ClassSubject.java")
   @J2ktIncompatible
   public final ClassSubject that(@Nullable Class<?> actual) {
-    return new ClassSubject(metadata(), actual);
+    return about(classes()).that(actual);
   }
 
   public final ThrowableSubject that(@Nullable Throwable actual) {
-    return new ThrowableSubject(metadata(), actual, "throwable");
+    return about(throwables()).that(actual);
   }
 
   public final LongSubject that(@Nullable Long actual) {
-    return new LongSubject(metadata(), actual);
+    return about(longs()).that(actual);
   }
 
   public final DoubleSubject that(@Nullable Double actual) {
-    return new DoubleSubject(metadata(), actual);
+    return about(doubles()).that(actual);
   }
 
   public final FloatSubject that(@Nullable Float actual) {
-    return new FloatSubject(metadata(), actual);
+    return about(floats()).that(actual);
   }
 
   public final IntegerSubject that(@Nullable Integer actual) {
-    return new IntegerSubject(metadata(), actual);
+    return about(integers()).that(actual);
   }
 
   public final BooleanSubject that(@Nullable Boolean actual) {
-    return new BooleanSubject(metadata(), actual);
+    return about(booleans()).that(actual);
   }
 
   public final StringSubject that(@Nullable String actual) {
-    return new StringSubject(metadata(), actual);
+    return about(strings()).that(actual);
   }
 
   public final IterableSubject that(@Nullable Iterable<?> actual) {
-    return new IterableSubject(metadata(), actual);
+    return about(iterables()).that(actual);
   }
 
   @SuppressWarnings("AvoidObjectArrays")
   public final <T extends @Nullable Object> ObjectArraySubject<T> that(T @Nullable [] actual) {
-    return new ObjectArraySubject<>(metadata(), actual, "array");
+    return about(ObjectArraySubject.<T>objectArrays()).that(actual);
   }
 
   public final PrimitiveBooleanArraySubject that(boolean @Nullable [] actual) {
-    return new PrimitiveBooleanArraySubject(metadata(), actual, "array");
+    return about(booleanArrays()).that(actual);
   }
 
   public final PrimitiveShortArraySubject that(short @Nullable [] actual) {
-    return new PrimitiveShortArraySubject(metadata(), actual, "array");
+    return about(shortArrays()).that(actual);
   }
 
   public final PrimitiveIntArraySubject that(int @Nullable [] actual) {
-    return new PrimitiveIntArraySubject(metadata(), actual, "array");
+    return about(intArrays()).that(actual);
   }
 
   public final PrimitiveLongArraySubject that(long @Nullable [] actual) {
-    return new PrimitiveLongArraySubject(metadata(), actual, "array");
+    return about(longArrays()).that(actual);
   }
 
   public final PrimitiveCharArraySubject that(char @Nullable [] actual) {
-    return new PrimitiveCharArraySubject(metadata(), actual, "array");
+    return about(charArrays()).that(actual);
   }
 
   public final PrimitiveByteArraySubject that(byte @Nullable [] actual) {
-    return new PrimitiveByteArraySubject(metadata(), actual, "array");
+    return about(byteArrays()).that(actual);
   }
 
   public final PrimitiveFloatArraySubject that(float @Nullable [] actual) {
-    return new PrimitiveFloatArraySubject(metadata(), actual, "array");
+    return about(floatArrays()).that(actual);
   }
 
   public final PrimitiveDoubleArraySubject that(double @Nullable [] actual) {
-    return new PrimitiveDoubleArraySubject(metadata(), actual, "array");
+    return about(doubleArrays()).that(actual);
   }
 
   public final GuavaOptionalSubject that(com.google.common.base.@Nullable Optional<?> actual) {
-    return new GuavaOptionalSubject(metadata(), actual, "optional");
+    return about(guavaOptionals()).that(actual);
   }
 
   public final MapSubject that(@Nullable Map<?, ?> actual) {
-    return new MapSubject(metadata(), actual);
+    return about(maps()).that(actual);
   }
 
   public final MultimapSubject that(@Nullable Multimap<?, ?> actual) {
-    return new MultimapSubject(metadata(), actual, "multimap");
+    return about(multimaps()).that(actual);
   }
 
   public final MultisetSubject that(@Nullable Multiset<?> actual) {
-    return new MultisetSubject(metadata(), actual);
+    return about(multisets()).that(actual);
   }
 
   public final TableSubject that(@Nullable Table<?, ?, ?> actual) {
-    return new TableSubject(metadata(), actual);
+    return about(tables()).that(actual);
   }
 
   /**
    * @since 1.3.0 (with access to {@link OptionalSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings({
-    "Java7ApiChecker", // no more dangerous that wherever the user got the Optional
-    "NullableOptional", // Truth always accepts nulls, no matter the type
-  })
+  @SuppressWarnings("NullableOptional") // Truth always accepts nulls, no matter the type
   public final OptionalSubject that(@Nullable Optional<?> actual) {
-    return new OptionalSubject(metadata(), actual, "optional");
+    return about(optionals()).that(actual);
   }
 
   /**
    * @since 1.4.0 (with access to {@link OptionalIntSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings(
-      "Java7ApiChecker") // no more dangerous that wherever the user got the OptionalInt
   public final OptionalIntSubject that(@Nullable OptionalInt actual) {
-    return new OptionalIntSubject(metadata(), actual, "optionalInt");
+    return about(optionalInts()).that(actual);
   }
 
   /**
    * @since 1.4.0 (with access to {@link OptionalLongSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings(
-      "Java7ApiChecker") // no more dangerous that wherever the user got the OptionalLong
   public final OptionalLongSubject that(@Nullable OptionalLong actual) {
-    return new OptionalLongSubject(metadata(), actual, "optionalLong");
+    return about(optionalLongs()).that(actual);
   }
 
   /**
    * @since 1.4.0 (with access to {@link OptionalDoubleSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings(
-      "Java7ApiChecker") // no more dangerous that wherever the user got the OptionalDouble
   public final OptionalDoubleSubject that(@Nullable OptionalDouble actual) {
-    return new OptionalDoubleSubject(metadata(), actual, "optionalDouble");
+    return about(optionalDoubles()).that(actual);
   }
 
   /**
    * @since 1.3.0 (with access to {@link StreamSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous that wherever the user got the Stream
   public final StreamSubject that(@Nullable Stream<?> actual) {
-    return new StreamSubject(metadata(), actual);
+    return about(streams()).that(actual);
   }
 
   /**
    * @since 1.4.0 (with access to {@link IntStreamSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings("Java7ApiChecker") // no more dangerous that wherever the user got the IntStream
   public final IntStreamSubject that(@Nullable IntStream actual) {
-    return new IntStreamSubject(metadata(), actual);
+    return about(intStreams()).that(actual);
   }
 
   /**
    * @since 1.4.0 (with access to {@link LongStreamSubject} previously part of {@code
    *     truth-java8-extension})
    */
-  @SuppressWarnings(
-      "Java7ApiChecker") // no more dangerous that wherever the user got the LongStream
   public final LongStreamSubject that(@Nullable LongStream actual) {
-    return new LongStreamSubject(metadata(), actual);
+    return about(longStreams()).that(actual);
   }
 
   // TODO(b/64757353): Add support for DoubleStream?
@@ -257,7 +286,7 @@ public class StandardSubjectBuilder {
   @J2ObjCIncompatible
   @J2ktIncompatible
   public final PathSubject that(@Nullable Path actual) {
-    return new PathSubject(metadata(), actual);
+    return about(paths()).that(actual);
   }
 
   /**
@@ -265,8 +294,8 @@ public class StandardSubjectBuilder {
    * this method is called multiple times, the messages will appear in the order that they were
    * specified.
    */
-  public final StandardSubjectBuilder withMessage(@Nullable String messageToPrepend) {
-    return withMessage("%s", messageToPrepend);
+  public final StandardSubjectBuilder withMessage(@Nullable String message) {
+    return withMessage("%s", message);
   }
 
   /**
@@ -281,20 +310,26 @@ public class StandardSubjectBuilder {
    * @throws IllegalArgumentException if the number of placeholders in the format string does not
    *     equal the number of given arguments
    */
-  public final StandardSubjectBuilder withMessage(String format, @Nullable Object... args) {
+  public final StandardSubjectBuilder withMessage(
+          String format,
+      @Nullable Object... args) {
     return new StandardSubjectBuilder(metadata().withMessage(format, args));
   }
 
   /**
-   * Given a factory for some {@code Subject} class, returns a builder whose {@code that(actual)}
-   * method creates instances of that class. Created subjects use the previously set failure
-   * strategy and any previously set failure message.
+   * Given a factory for some {@link Subject} class, returns a builder whose {@link
+   * SimpleSubjectBuilder#that that(actual)} method creates instances of that class. Created
+   * subjects use the previously set failure strategy and any previously set failure message.
    */
   public final <S extends Subject, A> SimpleSubjectBuilder<S, A> about(
       Subject.Factory<S, A> factory) {
-    return new SimpleSubjectBuilder<>(metadata(), factory);
+    return SimpleSubjectBuilder.create(metadata(), factory);
   }
 
+  /**
+   * A generic, advanced method of extension of Truth to new types, which is documented on {@link
+   * CustomSubjectBuilder}. Extension creators should prefer {@link Subject.Factory} if possible.
+   */
   public final <CustomSubjectBuilderT extends CustomSubjectBuilder> CustomSubjectBuilderT about(
       CustomSubjectBuilder.Factory<CustomSubjectBuilderT> factory) {
     return factory.createSubjectBuilder(metadata());
@@ -307,7 +342,7 @@ public class StandardSubjectBuilder {
    * {@link Truth#assertWithMessage}).
    */
   public final void fail() {
-    metadata().fail(ImmutableList.<Fact>of());
+    metadata().fail(ImmutableList.of());
   }
 
   private FailureMetadata metadata() {

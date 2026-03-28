@@ -22,25 +22,20 @@ import java.util.OptionalInt;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for Java 8 {@link OptionalInt} subjects.
+ * A subject for {@link OptionalInt} values.
  *
- * @author Ben Douglass
  * @since 1.3.0 (previously part of {@code truth-java8-extension})
  */
-@SuppressWarnings("Java7ApiChecker") // used only from APIs with Java 8 in their signatures
 @IgnoreJRERequirement
 public final class OptionalIntSubject extends Subject {
   private final @Nullable OptionalInt actual;
 
-  OptionalIntSubject(
-      FailureMetadata failureMetadata,
-      @Nullable OptionalInt subject,
-      @Nullable String typeDescription) {
-    super(failureMetadata, subject, typeDescription);
-    this.actual = subject;
+  private OptionalIntSubject(FailureMetadata failureMetadata, @Nullable OptionalInt actual) {
+    super(failureMetadata, actual);
+    this.actual = actual;
   }
 
-  /** Fails if the {@link OptionalInt} is empty or the subject is null. */
+  /** Checks that the actual {@link OptionalInt} contains a value. */
   public void isPresent() {
     if (actual == null) {
       failWithActual(simpleFact("expected present optional"));
@@ -49,7 +44,7 @@ public final class OptionalIntSubject extends Subject {
     }
   }
 
-  /** Fails if the {@link OptionalInt} is present or the subject is null. */
+  /** Checks that the actual {@link OptionalInt} does not contain a value. */
   public void isEmpty() {
     if (actual == null) {
       failWithActual(simpleFact("expected empty optional"));
@@ -61,8 +56,8 @@ public final class OptionalIntSubject extends Subject {
   }
 
   /**
-   * Fails if the {@link OptionalInt} does not have the given value or the subject is null. More
-   * sophisticated comparisons can be done using {@code assertThat(optional.getAsInt())…}.
+   * Checks that the actual {@link OptionalInt} contains the given value. More sophisticated
+   * comparisons can be done using {@code assertThat(optional.getAsInt())…}.
    */
   public void hasValue(int expected) {
     if (actual == null) {
@@ -86,6 +81,6 @@ public final class OptionalIntSubject extends Subject {
   @Deprecated
   @SuppressWarnings("InlineMeSuggester") // We want users to remove the surrounding call entirely.
   public static Factory<OptionalIntSubject, OptionalInt> optionalInts() {
-    return (metadata, subject) -> new OptionalIntSubject(metadata, subject, "optionalInt");
+    return OptionalIntSubject::new;
   }
 }

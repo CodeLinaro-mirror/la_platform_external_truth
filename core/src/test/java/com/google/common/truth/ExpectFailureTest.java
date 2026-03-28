@@ -15,16 +15,18 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertThrows;
 
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** Tests for {@link ExpectFailure} */
+/** Tests for {@link ExpectFailure}. */
 @RunWith(JUnit4.class)
 public class ExpectFailureTest {
   private final ExpectFailure expectFailure = new ExpectFailure();
@@ -63,113 +65,81 @@ public class ExpectFailureTest {
   @SuppressWarnings("TruthSelfEquals")
   public void expectFail_failsOnSuccess() {
     expectFailure.whenTesting().that(4).isEqualTo(4);
-    try {
-      @SuppressWarnings("unused")
-      AssertionError unused = expectFailure.getFailure();
-      throw new Error("Expected to fail");
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("ExpectFailure did not capture a failure.");
-    }
+    AssertionError e = assertThrows(AssertionError.class, () -> expectFailure.getFailure());
+    assertThat(e).hasMessageThat().contains("ExpectFailure did not capture a failure.");
   }
 
   @Test
   public void expectFail_failsOnMultipleFailures() {
-    try {
-      expectFailure.whenTesting().about(BadSubject.badSubject()).that(5).isEqualTo(4);
-      throw new Error("Expected to fail");
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("caught multiple failures");
-      assertThat(expected).hasMessageThat().contains("<4> is equal to <5>");
-      assertThat(expected).hasMessageThat().contains("<5> is equal to <4>");
-    }
+    AssertionError e =
+        assertThrows(
+            AssertionError.class,
+            () -> expectFailure.whenTesting().about(badSubject()).that(5).isEqualTo(4));
+    assertThat(e).hasMessageThat().contains("caught multiple failures");
+    assertThat(e).hasMessageThat().contains("4!=5");
+    assertThat(e).hasMessageThat().contains("5!=4");
   }
 
   @Test
   @SuppressWarnings("TruthSelfEquals")
-  public void expectFail_failsOnMultiplewhenTestings() {
-    try {
-      expectFailure.whenTesting().that(4).isEqualTo(4);
-      StandardSubjectBuilder unused = expectFailure.whenTesting();
-      throw new Error("Expected to fail");
-    } catch (AssertionError expected) {
-      assertThat(expected)
-          .hasMessageThat()
-          .contains(
-              "ExpectFailure.whenTesting() called previously, but did not capture a failure.");
-    }
+  public void expectFail_failsOnMultipleWhenTestings() {
+    expectFailure.whenTesting().that(4).isEqualTo(4);
+    AssertionError e = assertThrows(AssertionError.class, () -> expectFailure.whenTesting());
+    assertThat(e)
+        .hasMessageThat()
+        .contains("ExpectFailure.whenTesting() called previously, but did not capture a failure.");
   }
 
   @Test
-  public void expectFail_failsOnMultiplewhenTestings_thatFail() {
+  public void expectFail_failsOnMultipleWhenTestings_thatFail() {
     expectFailure.whenTesting().that(5).isEqualTo(4);
-    try {
-      StandardSubjectBuilder unused = expectFailure.whenTesting();
-      throw new Error("Expected to fail");
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("ExpectFailure already captured a failure");
-    }
+    AssertionError e = assertThrows(AssertionError.class, () -> expectFailure.whenTesting());
+    assertThat(e).hasMessageThat().contains("ExpectFailure already captured a failure");
   }
 
   @Test
   @SuppressWarnings("TruthSelfEquals")
   public void expectFail_failsAfterTest() {
-    try {
-      expectFailure.whenTesting().that(4).isEqualTo(4);
-      expectFailure.ensureFailureCaught();
-      throw new Error("Expected to fail");
-    } catch (AssertionError expected) {
-      assertThat(expected)
-          .hasMessageThat()
-          .contains("ExpectFailure.whenTesting() invoked, but no failure was caught.");
-    }
+    expectFailure.whenTesting().that(4).isEqualTo(4);
+    AssertionError e =
+        assertThrows(AssertionError.class, () -> expectFailure.ensureFailureCaught());
+    assertThat(e)
+        .hasMessageThat()
+        .contains("ExpectFailure.whenTesting() invoked, but no failure was caught.");
   }
 
   @Test
   @SuppressWarnings("TruthSelfEquals")
   public void expectFail_whenTestingWithoutInContext_shouldFail() {
     ExpectFailure expectFailure = new ExpectFailure();
-    try {
-      expectFailure.whenTesting().that(4).isEqualTo(4);
-      throw new Error("Expected to fail");
-    } catch (IllegalStateException expected) {
-      assertThat(expected).hasMessageThat().contains("ExpectFailure must be used as a JUnit @Rule");
-    }
+    IllegalStateException expected =
+        assertThrows(
+            IllegalStateException.class, () -> expectFailure.whenTesting().that(4).isEqualTo(4));
+    assertThat(expected).hasMessageThat().contains("ExpectFailure must be used as a JUnit @Rule");
   }
 
   private static Subject.Factory<StringSubject, String> strings() {
-    return new Subject.Factory<StringSubject, String>() {
-      @Override
-      public StringSubject createSubject(FailureMetadata fm, String that) {
-        return new StringSubject(fm, that);
-      }
-    };
+    return StringSubject::new;
   }
 
   private static class BadSubject extends Subject {
-    private final Integer actual;
+    private final @Nullable Integer actual;
 
-    BadSubject(FailureMetadata failureMetadat, Integer actual) {
-      super(failureMetadat, actual);
+    BadSubject(FailureMetadata metadata, @Nullable Integer actual) {
+      super(metadata, actual);
       this.actual = actual;
     }
 
     @Override
-    public void isEqualTo(Object expected) {
-      if (!actual.equals(expected)) {
-        failWithoutActual(
-            simpleFact(lenientFormat("expected <%s> is equal to <%s>", actual, expected)));
-        failWithoutActual(
-            simpleFact(lenientFormat("expected <%s> is equal to <%s>", expected, actual)));
+    public void isEqualTo(@Nullable Object expected) {
+      if (!Objects.equals(actual, expected)) {
+        failWithoutActual(simpleFact(actual + "!=" + expected));
+        failWithoutActual(simpleFact(expected + "!=" + actual));
       }
     }
+  }
 
-    private static Subject.Factory<BadSubject, Integer> badSubject() {
-      return new Subject.Factory<BadSubject, Integer>() {
-        @Override
-        public BadSubject createSubject(FailureMetadata fm, Integer that) {
-          return new BadSubject(fm, that);
-        }
-      };
-    }
+  private static Subject.Factory<BadSubject, Integer> badSubject() {
+    return BadSubject::new;
   }
 }

@@ -19,21 +19,18 @@ import static java.lang.Double.parseDouble;
 import static java.lang.Float.parseFloat;
 import static jsinterop.annotations.JsPackage.GLOBAL;
 
-import com.google.common.collect.ImmutableList;
+import com.google.common.base.Strings;
+import java.util.List;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsProperty;
 import jsinterop.annotations.JsType;
-import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 
 /**
  * Extracted routines that need to be swapped in for GWT, to allow for minimal deltas between the
  * GWT and non-GWT version.
- *
- * @author Christian Gruber (cgruber@google.com)
  */
-@NullMarked
 final class Platform {
   private Platform() {}
 
@@ -41,7 +38,8 @@ final class Platform {
   static boolean isInstanceOfType(Object instance, Class<?> clazz) {
     if (clazz.isInterface()) {
       throw new UnsupportedOperationException(
-          "Under GWT, we can't determine whether an object is an instance of an interface Class");
+          "On Web platforms, we can't determine whether an object is an instance of an interface"
+              + " Class");
     }
 
     for (Class<?> current = instance.getClass();
@@ -54,17 +52,21 @@ final class Platform {
     return false;
   }
 
-  /** Determines if the given subject contains a match for the given regex. */
-  static boolean containsMatch(String subject, String regex) {
-    return compile(regex).test(subject);
+  /** Determines if the given actual value contains a match for the given regex. */
+  static boolean containsMatch(String actual, String regex) {
+    return compile(regex).test(actual);
   }
 
-  /**
-   * Returns an array containing all the exceptions that were suppressed to deliver the given
-   * exception. Delegates to the getSuppressed() method on Throwable that is available in Java 1.7+
-   */
-  static Throwable[] getSuppressed(Throwable throwable) {
-    return throwable.getSuppressed();
+  /** Determines if the given actual value is fully matched by the given regex. */
+  static boolean matches(String actual, String regex) {
+    /*
+     * When String.matches checks for a match, it will use a NativeRegExp to search for (roughly)
+     * /^regex$/. But before that, we create a NativeRegExp inputs for just /regex/. That performs a
+     * syntax check on the user's input, so the message from any syntax error will show the user's
+     * input.
+     */
+    NativeRegExp unused = new NativeRegExp(regex);
+    return actual.matches(regex);
   }
 
   static void cleanStackTrace(Throwable throwable) {
@@ -75,7 +77,7 @@ final class Platform {
     return null;
   }
 
-  static @Nullable ImmutableList<Fact> makeDiff(String expected, String actual) {
+  static @Nullable List<Fact> makeDiff(String expected, String actual) {
     /*
      * IIUC, GWT messages lose their newlines by the time users see them. Given that, users are
      * likely better served by showing the expected and actual values with mangled newlines than by
@@ -84,21 +86,6 @@ final class Platform {
      * always been stuck like this.
      */
     return null;
-  }
-
-  abstract static class PlatformComparisonFailure extends AssertionError {
-    PlatformComparisonFailure(
-        String message,
-        String unusedUnderGwtExpected,
-        String unusedUnderGwtActual,
-        @Nullable Throwable cause) {
-      super(message, cause);
-    }
-
-    @Override
-    public final String toString() {
-      return "" + getLocalizedMessage();
-    }
   }
 
   static String doubleToString(double value) {
@@ -136,23 +123,28 @@ final class Platform {
   }
 
   private static String toLocaleString(double value) {
-    // Recieve a double as a parameter so that "(Object) value" does not box it.
+    // Receive a double as a parameter so that "(Object) value" does not box it.
     return ((NativeNumber) (Object) value).toLocaleString("en-US", JavaLikeOptions.INSTANCE);
   }
 
-  @JsType(isNative = true, namespace = "proto.im")
+  @JsType(isNative = true, namespace = "jspb")
   private static class Message {
     public native String serialize();
   }
 
-  @JsMethod(namespace = "proto.im.debug")
+  @JsMethod(namespace = "jspb.debug")
   private static native Object dump(Message msg) /*-{
-    // Emtpy stub to make GWT happy. This will never get executed under GWT.
+    // Empty stub to make GWT happy. This will never get executed under GWT.
     throw new Error();
   }-*/;
 
-  /** Turns a non-double, non-float object into a string. */
-  static String stringValueOfNonFloatingPoint(@Nullable Object o) {
+  /**
+   * Turns an object (typically an expected or actual value) into a string for use in a failure
+   * message. Note that this method does not handle floating-point values the way we want on all
+   * platforms, so some callers may wish to use {@link #doubleToString} or {@link #floatToString}
+   * where appropriate.
+   */
+  static String stringValueForFailure(@Nullable Object o) {
     // Check if we are in J2CL mode by probing a system property that only exists in GWT.
     boolean inJ2clMode = "doesntexist".equals(System.getProperty("superdevmode", "doesntexist"));
     if (inJ2clMode && o instanceof Message) {
@@ -171,26 +163,26 @@ final class Platform {
     return throwable.toString();
   }
 
-  /** Tests if current platform is Android which is always false. */
-  static boolean isAndroid() {
-    return false;
-  }
-
   /**
-   * A GWT-swapped version of test rule interface that does nothing. All methods extended from
-   * {@link org.junit.rules.TestRule} needs to be stripped.
+   * A substitute for {@link org.junit.rules.TestRule} that contains no methods, since we can't
+   * implement that type under GWT/J2CL.
    */
   interface JUnitTestRule {}
 
-  static final String EXPECT_FAILURE_WARNING_IF_GWT =
-      " Note: One possible reason for a failure not to be caught is for the test to throw some "
-          + "other exception before the failure would have happened. Under GWT, such an exception "
-          + "is hidden by this message. The non-GWT tests do not have this problem, so you may "
-          + "wish to debug them first. If you're still having this problem, consider temporarily "
-          + "modifying the GWT copy of PlatformBaseSubjectTestCase to remove the call to "
-          + "ensureFailureCaught(). Removing that call will let any other exception fall through. "
-          + "(But of course it will also prevent the test from verifying that the expected failure "
-          + "occurred.)";
+  static String expectFailureWarningIfWeb() {
+    return " Note: One possible reason for a failure not to be caught is for the test to throw some"
+        + " other exception before the failure would have happened. Under GWT, such an"
+        + " exception is hidden by this message. The non-GWT tests do not have this problem,"
+        + " so you may wish to debug them first. If you're still having this problem,"
+        + " consider temporarily modifying the GWT copy of PlatformBaseSubjectTestCase to"
+        + " remove the call to ensureFailureCaught(). Removing that call will let any other"
+        + " exception fall through. (But of course it will also prevent the test from"
+        + " verifying that the expected failure occurred.)";
+  }
+
+  static boolean forceInferDescription() {
+    return false; // irrelevant because we can infer descriptions only under the JVM
+  }
 
   // TODO(user): Move this logic to a common location.
   private static NativeRegExp compile(String pattern) {
@@ -241,26 +233,12 @@ final class Platform {
   }
 
   static AssertionError makeComparisonFailure(
-      ImmutableList<String> messages,
-      ImmutableList<Fact> facts,
-      String expected,
-      String actual,
+      List<String> messages,
+      List<Fact> facts,
+      String unusedExpected,
+      String unusedActual,
       @Nullable Throwable cause) {
-    /*
-     * Despite the name, the class we're creating extends AssertionError but not ComparisonFailure
-     * under GWT: See its supertype, PlatformComparisonFailure, above.
-     *
-     * We're actually creating the same class as the non-GWT version of this method does. So why do
-     * we have supersource for this method? It's because we can't run (and, fortunately, don't need
-     * to run) the reflective code we have for non-GWT users, who might or might not choose to
-     * exclude JUnit 4 from their classpath.
-     *
-     * TODO(cpovirk): Remove ComparisonFailureWithFacts and PlatformComparisonFailure entirely under
-     * GWT? That would let us merge them into a single class on the server. And as noted in the
-     * non-GWT copy of Platform, we could consider another custom type that exposes getExpected()
-     * and getActual(), even in the absence of ComparisonFailure. That type would work under GWT.
-     */
-    return new ComparisonFailureWithFacts(messages, facts, expected, actual, cause);
+    return AssertionErrorWithFacts.create(messages, facts, cause);
   }
 
   static boolean isKotlinRange(Iterable<?> iterable) {
@@ -273,6 +251,11 @@ final class Platform {
 
   static boolean classMetadataUnsupported() {
     return String.class.getSuperclass() == null;
+  }
+
+  static String lenientFormatForFailure(
+      @Nullable String template, @Nullable Object @Nullable ... args) {
+    return Strings.lenientFormat(template, args);
   }
 }
 
