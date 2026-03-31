@@ -21,7 +21,12 @@ import java.nio.file.Path;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Assertions for {@link Path} instances.
+ * A subject for {@link Path} values.
+ *
+ * <p>This subject does not currently add any assertions to the ones inherited from {@link Subject}.
+ * A future version may. Meanwhile, we do at least need to have {@link Truth#assertThat(Path)}
+ * because otherwise {@code assertThat(path)} would not compile: it would be ambiguous because
+ * {@link Path} extends both {@link Comparable} and {@link Iterable}.
  *
  * @since 1.3.0 (previously part of {@code truth-java8-extension})
  */
@@ -29,21 +34,22 @@ import org.jspecify.annotations.Nullable;
 @J2ObjCIncompatible
 @J2ktIncompatible
 public final class PathSubject extends Subject {
-  PathSubject(FailureMetadata failureMetadata, @Nullable Path actual) {
+  private PathSubject(FailureMetadata failureMetadata, @Nullable Path actual) {
     super(failureMetadata, actual);
   }
 
   /**
    * Obsolete factory instance. This factory was previously necessary for assertions like {@code
-   * assertWithMessage(...).about(intStreams()).that(stream)....}. Now, you can perform assertions
-   * like that without the {@code about(...)} call.
+   * assertWithMessage(...).about(paths()).that(path)....}. Now, you can perform assertions like
+   * that without the {@code about(...)} call.
    *
    * @deprecated Instead of {@code about(paths()).that(...)}, use just {@code that(...)}. Similarly,
    *     instead of {@code assertAbout(paths()).that(...)}, use just {@code assertThat(...)}.
    */
   @Deprecated
   @SuppressWarnings("InlineMeSuggester") // We want users to remove the surrounding call entirely.
-  public static Factory<PathSubject, Path> paths() {
+  public
+  static Factory<PathSubject, Path> paths() {
     return PathSubject::new;
   }
 }

@@ -15,43 +15,48 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.FailureAssertions.assertFailureValue;
 import static com.google.common.truth.Truth.assertThat;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for introspective Subject behaviour.
- *
- * @author Christian Gruber (cgruber@israfil.net)
- */
+/** Tests for {@link ClassSubject}. */
 @RunWith(JUnit4.class)
-public class ClassSubjectTest extends BaseSubjectTestCase {
+public class ClassSubjectTest {
   @Test
-  public void testIsAssignableTo_same() {
+  public void isAssignableTo_same() {
     assertThat(String.class).isAssignableTo(String.class);
   }
 
   @Test
-  public void testIsAssignableTo_parent() {
+  public void isAssignableTo_parent() {
     assertThat(String.class).isAssignableTo(Object.class);
     assertThat(NullPointerException.class).isAssignableTo(Exception.class);
   }
 
   @Test
-  public void testIsAssignableTo_reversed() {
-    expectFailureWhenTestingThat(Object.class).isAssignableTo(String.class);
-    assertFailureValue("expected to be assignable to", "java.lang.String");
+  public void isAssignableTo_reversed() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(Object.class).isAssignableTo(String.class));
+    assertFailureValue(e, "expected to be assignable to", "String");
   }
 
   @Test
-  public void testIsAssignableTo_differentTypes() {
-    expectFailureWhenTestingThat(String.class).isAssignableTo(Exception.class);
-    assertFailureValue("expected to be assignable to", "java.lang.Exception");
+  public void isAssignableTo_differentTypes() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(String.class).isAssignableTo(Exception.class));
+    assertFailureValue(e, "expected to be assignable to", "Exception");
   }
 
-  private ClassSubject expectFailureWhenTestingThat(Class<?> actual) {
-    return expectFailure.whenTesting().that(actual);
+  @Test
+  public void isAssignableTo_forNullActual() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that((Class<?>) null).isAssignableTo(Exception.class));
+    assertFailureValue(e, "expected to be assignable to", "Exception");
   }
 }
