@@ -18,11 +18,12 @@ package com.google.common.truth;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.lenientFormat;
+import static com.google.common.truth.Platform.expectFailureWarningIfWeb;
+import static com.google.common.truth.Platform.getStackTraceAsString;
 import static com.google.common.truth.Truth.assertAbout;
 import static com.google.common.truth.TruthFailureSubject.truthFailures;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.truth.Truth.SimpleAssertionError;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import org.jspecify.annotations.Nullable;
 import org.junit.runner.Description;
@@ -35,19 +36,20 @@ import org.junit.runners.model.Statement;
  * <p>Usage:
  *
  * <pre>{@code
- *   AssertionError failure =
+ *   AssertionError e =
  *       expectFailure(whenTesting -> whenTesting.that(cancelButton).isVisible());
- *   assertThat(failure).factKeys().containsExactly("expected to be visible");
+ *   assertThat(e).factKeys().containsExactly("expected to be visible");
  *
  * ...
  *
  * private static AssertionError expectFailure(
- *     ExpectFailure.SimpleSubjectBuilderCallback<UiElementSubject, UiElement> assertionCallback) {
- *   return ExpectFailure.expectFailureAbout(uiElements(), assertionCallback);
+ *     SimpleSubjectBuilderCallback<UiElementSubject, UiElement> assertionCallback) {
+ *   return expectFailureAbout(uiElements(), assertionCallback);
  * }
  * }</pre>
  *
- * Or, if you can't use lambdas:
+ * {@link ExpectFailure} also supports a legacy approach, which we no longer recommend now that all
+ * Truth users can use lambdas. That approach is based on the JUnit {@code @Rule} system:
  *
  * <pre>
  * {@code @Rule public final ExpectFailure expectFailure = new ExpectFailure();}
@@ -55,16 +57,28 @@ import org.junit.runners.model.Statement;
  * {@code ...
  *
  *     expectFailure.whenTesting().about(uiElements()).that(cancelButton).isVisible();
- *     assertThat(failure).factKeys().containsExactly("expected to be visible");
+ *     assertThat(expectFailure.getFailure()).factKeys().containsExactly("expected to be visible");
  * }</pre>
  *
  * <p>{@code ExpectFailure} is similar to JUnit's {@code assertThrows} (<a
  * href="https://junit.org/junit4/javadoc/latest/org/junit/Assert.html#assertThrows%28java.lang.Class,%20org.junit.function.ThrowingRunnable%29">JUnit
  * 4</a>, <a
- * href="https://junit.org/junit5/docs/current/api/org/junit/jupiter/api/Assertions.html#assertThrows%28java.lang.Class,org.junit.jupiter.api.function.Executable%29">JUnit
- * 5</a>). We recommend it over {@code assertThrows} when you're testing a Truth subject because it
- * also checks that the assertion you're testing uses the supplied {@link FailureStrategy} and calls
- * {@link FailureStrategy#fail} only once.
+ * href="https://docs.junit.org/current/api/org.junit.jupiter.api/org/junit/jupiter/api/Assertions.html#assertThrows(java.lang.Class,org.junit.jupiter.api.function.Executable)">JUnit
+ * 5</a>). We recommend it over {@code assertThrows} when you're testing a Truth subject because:
+ *
+ * <ul>
+ *   <li>It performs additional checks:
+ *       <ul>
+ *         <li>It checks that the assertion you're testing uses the supplied {@link
+ *             FailureStrategy}.
+ *         <li>It checks that the assertion you're testing calls {@link FailureStrategy#fail} only
+ *             once.
+ *       </ul>
+ *   <li>It instructs Truth to generate failure messages <i>without</i> adding lines like "value of:
+ *       foo()" for {@code assertThat(foo())....} calls that it detects in the test bytecode. Truth
+ *       doesn't provide guarantees for when such lines will be generated, so tests become more
+ *       resilient without them.
+ * </ul>
  */
 public final class ExpectFailure implements Platform.JUnitTestRule {
   private boolean inRuleContext = false;
@@ -78,30 +92,32 @@ public final class ExpectFailure implements Platform.JUnitTestRule {
   public ExpectFailure() {}
 
   /**
-   * Returns a test verb that expects the chained assertion to fail, and makes the failure available
-   * via {@link #getFailure}.
+   * Legacy method that returns a subject builder that expects the chained assertion to fail, and
+   * makes the failure available via {@link #getFailure}.
    *
-   * <p>An instance of {@code ExpectFailure} supports only one {@code whenTesting} call per test
+   * <p>An instance of {@link ExpectFailure} supports only one {@code whenTesting} call per test
    * method. The static {@link #expectFailure} method, by contrast, does not have this limitation.
    */
   public StandardSubjectBuilder whenTesting() {
     checkState(inRuleContext, "ExpectFailure must be used as a JUnit @Rule");
     if (failure != null) {
-      throw SimpleAssertionError.create("ExpectFailure already captured a failure", failure);
+      throw AssertionErrorWithFacts.createWithoutFacts(
+          "ExpectFailure already captured a failure", failure);
     }
     if (failureExpected) {
       throw new AssertionError(
           "ExpectFailure.whenTesting() called previously, but did not capture a failure.");
     }
     failureExpected = true;
-    return StandardSubjectBuilder.forCustomFailureStrategy(this::captureFailure);
+    return StandardSubjectBuilder.forCustomFailureStrategy(
+        this::captureFailure, /* suppressInferDescription= */ true);
   }
 
   /**
    * Enters rule context to be ready to capture failures.
    *
-   * <p>This should be rarely used directly, except if this class is as a long living object but not
-   * as a JUnit rule, like truth subject tests where for GWT compatible reasons.
+   * <p>This should be used only from framework code. This normally means from the {@link #apply}
+   * method below, but our tests call it directly under J2CL.
    */
   void enterRuleContext() {
     this.inRuleContext = true;
@@ -120,11 +136,11 @@ public final class ExpectFailure implements Platform.JUnitTestRule {
     if (failureExpected && failure == null) {
       throw new AssertionError(
           "ExpectFailure.whenTesting() invoked, but no failure was caught."
-              + Platform.EXPECT_FAILURE_WARNING_IF_GWT);
+              + expectFailureWarningIfWeb());
     }
   }
 
-  /** Returns the captured failure, if one occurred. */
+  /** Legacy method that returns the failure captured by {@link #whenTesting}, if one occurred. */
   public AssertionError getFailure() {
     if (failure == null) {
       throw new AssertionError("ExpectFailure did not capture a failure.");
@@ -138,20 +154,20 @@ public final class ExpectFailure implements Platform.JUnitTestRule {
    */
   private void captureFailure(AssertionError captured) {
     if (failure != null) {
-      // TODO(diamondm) is it worthwhile to add the failures as suppressed exceptions?
+      // TODO(diamondm): Is it worthwhile to add the failures as suppressed exceptions?
       throw new AssertionError(
           lenientFormat(
               "ExpectFailure.whenTesting() caught multiple failures:\n\n%s\n\n%s\n",
-              Platform.getStackTraceAsString(failure), Platform.getStackTraceAsString(captured)));
+              getStackTraceAsString(failure), getStackTraceAsString(captured)));
     }
     failure = captured;
   }
 
   /**
-   * Static alternative that directly returns the triggered failure. This is intended to be used in
-   * Java 8+ tests similar to {@code expectThrows()}:
+   * Captures and returns the failure produced by the assertion in the provided callback, similar to
+   * {@code assertThrows()}:
    *
-   * <p>{@code AssertionError failure = expectFailure(whenTesting ->
+   * <p>{@code AssertionError e = expectFailure(whenTesting ->
    * whenTesting.that(4).isNotEqualTo(4));}
    */
   @CanIgnoreReturnValue
@@ -163,10 +179,10 @@ public final class ExpectFailure implements Platform.JUnitTestRule {
   }
 
   /**
-   * Static alternative that directly returns the triggered failure. This is intended to be used in
-   * Java 8+ tests similar to {@code expectThrows()}:
+   * Captures and returns the failure produced by the assertion in the provided callback, similar to
+   * {@code assertThrows()}:
    *
-   * <p>{@code AssertionError failure = expectFailureAbout(myTypes(), whenTesting ->
+   * <p>{@code AssertionError e = expectFailureAbout(myTypes(), whenTesting ->
    * whenTesting.that(myType).hasProperty());}
    */
   @CanIgnoreReturnValue
@@ -205,26 +221,22 @@ public final class ExpectFailure implements Platform.JUnitTestRule {
   }
 
   /**
-   * A "functional interface" for {@link #expectFailure expectFailure()} to invoke and capture
+   * A functional interface for {@link #expectFailure expectFailure()} to invoke and capture
    * failures.
    *
-   * <p>Java 8+ users should pass a lambda to {@code .expectFailure()} rather than directly
-   * implement this interface. Java 7+ users can define an {@code @Rule ExpectFailure} instance
-   * instead, however if you prefer the {@code .expectFailure()} pattern you can use this interface
-   * to pass in an anonymous class.
+   * <p>Users should pass a lambda to {@code .expectFailure()} rather than directly implement this
+   * interface.
    */
   public interface StandardSubjectBuilderCallback {
     void invokeAssertion(StandardSubjectBuilder whenTesting);
   }
 
   /**
-   * A "functional interface" for {@link #expectFailureAbout expectFailureAbout()} to invoke and
+   * A functional interface for {@link #expectFailureAbout expectFailureAbout()} to invoke and
    * capture failures.
    *
-   * <p>Java 8+ users should pass a lambda to {@code .expectFailureAbout()} rather than directly
-   * implement this interface. Java 7+ users can define an {@code @Rule ExpectFailure} instance
-   * instead, however if you prefer the {@code .expectFailureAbout()} pattern you can use this
-   * interface to pass in an anonymous class.
+   * <p>Users should pass a lambda to {@code .expectFailureAbout()} rather than directly implement
+   * this interface.
    */
   public interface SimpleSubjectBuilderCallback<S extends Subject, A> {
     void invokeAssertion(SimpleSubjectBuilder<S, A> whenTesting);

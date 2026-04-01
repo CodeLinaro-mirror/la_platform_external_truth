@@ -16,21 +16,22 @@
 package com.google.common.truth;
 
 import static com.google.common.base.Functions.identity;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.truth.DoubleSubject.checkTolerance;
+import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
+import static com.google.common.truth.MathUtil.equalWithinTolerance;
 import static com.google.common.truth.Platform.getStackTraceAsString;
 import static com.google.common.truth.SubjectUtils.asList;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
-import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -62,8 +63,6 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Instances of this are typically used via {@link IterableSubject#comparingElementsUsing},
  * {@link MapSubject#comparingValuesUsing}, or {@link MultimapSubject#comparingValuesUsing}.
- *
- * @author Pete Gillin
  */
 public abstract class Correspondence<A extends @Nullable Object, E extends @Nullable Object> {
 
@@ -114,7 +113,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
    */
   public static <A extends @Nullable Object, E extends @Nullable Object> Correspondence<A, E> from(
       BinaryPredicate<A, E> predicate, String description) {
-    return new FromBinaryPredicate<>(predicate, description);
+    return FromBinaryPredicate.create(predicate, description);
   }
 
   /**
@@ -141,8 +140,8 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
     private final BinaryPredicate<A, E> predicate;
     private final String description;
 
-    private FromBinaryPredicate(BinaryPredicate<A, E> correspondencePredicate, String description) {
-      this.predicate = checkNotNull(correspondencePredicate);
+    private FromBinaryPredicate(BinaryPredicate<A, E> predicate, String description) {
+      this.predicate = checkNotNull(predicate);
       this.description = checkNotNull(description);
     }
 
@@ -154,6 +153,11 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
     @Override
     public String toString() {
       return description;
+    }
+
+    static <A extends @Nullable Object, E extends @Nullable Object>
+        FromBinaryPredicate<A, E> create(BinaryPredicate<A, E> predicate, String description) {
+      return new FromBinaryPredicate<>(predicate, description);
     }
   }
 
@@ -196,7 +200,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
   public static <A extends @Nullable Object, E extends @Nullable Object>
       Correspondence<A, E> transforming(
           Function<A, ? extends E> actualTransform, String description) {
-    return new Transforming<>(actualTransform, identity(), description);
+    return Transforming.create(actualTransform, identity(), description);
   }
 
   /**
@@ -244,7 +248,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
   public static <A extends @Nullable Object, E extends @Nullable Object>
       Correspondence<A, E> transforming(
           Function<A, ?> actualTransform, Function<E, ?> expectedTransform, String description) {
-    return new Transforming<>(actualTransform, expectedTransform, description);
+    return Transforming.create(actualTransform, expectedTransform, description);
   }
 
   private static final class Transforming<A extends @Nullable Object, E extends @Nullable Object>
@@ -265,12 +269,19 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
 
     @Override
     public boolean compare(A actual, E expected) {
-      return Objects.equal(actualTransform.apply(actual), expectedTransform.apply(expected));
+      return Objects.equals(actualTransform.apply(actual), expectedTransform.apply(expected));
     }
 
     @Override
     public String toString() {
       return description;
+    }
+
+    static <A extends @Nullable Object, E extends @Nullable Object> Transforming<A, E> create(
+        Function<? super A, ?> actualTransform,
+        Function<? super E, ?> expectedTransform,
+        String description) {
+      return new Transforming<>(actualTransform, expectedTransform, description);
     }
   }
 
@@ -292,7 +303,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
    *     Double#NaN}, {@link Double#POSITIVE_INFINITY}, or negative, including {@code -0.0}
    */
   public static Correspondence<Number, Number> tolerance(double tolerance) {
-    return new TolerantNumericEquality(tolerance);
+    return TolerantNumericEquality.create(tolerance);
   }
 
   private static final class TolerantNumericEquality extends Correspondence<Number, Number> {
@@ -308,12 +319,27 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
     public boolean compare(Number actual, Number expected) {
       double actualDouble = checkNotNull(actual).doubleValue();
       double expectedDouble = checkNotNull(expected).doubleValue();
-      return MathUtil.equalWithinTolerance(actualDouble, expectedDouble, tolerance);
+      return equalWithinTolerance(actualDouble, expectedDouble, tolerance);
     }
 
     @Override
     public String toString() {
       return "is a finite number within " + tolerance + " of";
+    }
+
+    static TolerantNumericEquality create(double tolerance) {
+      return new TolerantNumericEquality(tolerance);
+    }
+
+    /**
+     * Ensures that the given tolerance is a non-negative finite value, i.e., not {@link
+     * Double#NaN}, {@link Double#POSITIVE_INFINITY}, or negative, including {@code -0.0}.
+     */
+    private static void checkTolerance(double tolerance) {
+      checkArgument(!Double.isNaN(tolerance), "tolerance cannot be NaN");
+      checkArgument(
+          Double.compare(tolerance, 0.0) >= 0, "tolerance (%s) cannot be negative", tolerance);
+      checkArgument(tolerance != Double.POSITIVE_INFINITY, "tolerance cannot be POSITIVE_INFINITY");
     }
   }
 
@@ -333,7 +359,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
 
     @Override
     public boolean compare(T actual, T expected) {
-      return Objects.equal(actual, expected);
+      return Objects.equals(actual, expected);
     }
 
     @Override
@@ -358,6 +384,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
    *     migration is usually to {@link #from}.
    */
   @Deprecated
+  private
   Correspondence() {}
 
   /**
@@ -388,7 +415,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
    * }</pre>
    */
   public Correspondence<A, E> formattingDiffsUsing(DiffFormatter<? super A, ? super E> formatter) {
-    return new FormattingDiffs<>(this, formatter);
+    return FormattingDiffs.create(this, formatter);
   }
 
   /**
@@ -406,17 +433,17 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
      * Returns a {@link String} describing the difference between the {@code actual} and {@code
      * expected} values, if possible, or {@code null} if not.
      */
-    @Nullable
-    String formatDiff(A actual, E expected);
+    @Nullable String formatDiff(A actual, E expected);
   }
 
-  private static class FormattingDiffs<A extends @Nullable Object, E extends @Nullable Object>
+  private static final class FormattingDiffs<A extends @Nullable Object, E extends @Nullable Object>
       extends Correspondence<A, E> {
 
     private final Correspondence<A, E> delegate;
     private final DiffFormatter<? super A, ? super E> formatter;
 
-    FormattingDiffs(Correspondence<A, E> delegate, DiffFormatter<? super A, ? super E> formatter) {
+    private FormattingDiffs(
+        Correspondence<A, E> delegate, DiffFormatter<? super A, ? super E> formatter) {
       this.delegate = checkNotNull(delegate);
       this.formatter = checkNotNull(formatter);
     }
@@ -439,6 +466,11 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
     @Override
     boolean isEquality() {
       return delegate.isEquality();
+    }
+
+    static <A extends @Nullable Object, E extends @Nullable Object> FormattingDiffs<A, E> create(
+        Correspondence<A, E> delegate, DiffFormatter<? super A, ? super E> formatter) {
+      return new FormattingDiffs<>(delegate, formatter);
     }
   }
 
@@ -525,16 +557,15 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
    */
   public abstract boolean compare(A actual, E expected);
 
-  private static class StoredException {
+  private static final class StoredException {
 
     private static final Joiner ARGUMENT_JOINER = Joiner.on(", ").useForNull("null");
 
     private final Exception exception;
     private final String methodName;
-    private final List<@Nullable Object> methodArguments;
+    private final List<?> methodArguments;
 
-    StoredException(
-        Exception exception, String methodName, List<@Nullable Object> methodArguments) {
+    private StoredException(Exception exception, String methodName, List<?> methodArguments) {
       this.exception = checkNotNull(exception);
       this.methodName = checkNotNull(methodName);
       this.methodArguments = checkNotNull(methodArguments);
@@ -543,13 +574,17 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
     /**
      * Returns a String describing the exception stored. This includes a stack trace (except under
      * j2cl, where this is not available). It also has a separator at the end, so that when this
-     * appears at the end of an {@code AssertionError} message, the stack trace of the stored
-     * exception is distinguishable from the stack trace of the {@code AssertionError}.
+     * appears at the end of an {@link AssertionError} message, the stack trace of the stored
+     * exception is distinguishable from the stack trace of the {@link AssertionError}.
      */
     private String describe() {
-      return Strings.lenientFormat(
+      return lenientFormat(
           "%s(%s) threw %s\n---",
           methodName, ARGUMENT_JOINER.join(methodArguments), getStackTraceAsString(exception));
+    }
+
+    static StoredException create(Exception exception, String methodName, List<?> methodArguments) {
+      return new StoredException(exception, methodName, methodArguments);
     }
   }
 
@@ -593,7 +628,8 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
         @Nullable Object expected) {
       if (firstCompareException == null) {
         truncateStackTrace(exception, callingClass);
-        firstCompareException = new StoredException(exception, "compare", asList(actual, expected));
+        firstCompareException =
+            StoredException.create(exception, "compare", asList(actual, expected));
       }
     }
 
@@ -612,7 +648,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
       if (firstPairingException == null) {
         truncateStackTrace(exception, callingClass);
         firstPairingException =
-            new StoredException(exception, "actualKeyFunction.apply", asList(actual));
+            StoredException.create(exception, "actualKeyFunction.apply", asList(actual));
       }
     }
 
@@ -631,7 +667,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
       if (firstPairingException == null) {
         truncateStackTrace(exception, callingClass);
         firstPairingException =
-            new StoredException(exception, "expectedKeyFunction.apply", asList(expected));
+            StoredException.create(exception, "expectedKeyFunction.apply", asList(expected));
       }
     }
 
@@ -654,7 +690,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
       if (firstFormatDiffException == null) {
         truncateStackTrace(exception, callingClass);
         firstFormatDiffException =
-            new StoredException(exception, "formatDiff", asList(actual, expected));
+            StoredException.create(exception, "formatDiff", asList(actual, expected));
       }
     }
 
@@ -836,7 +872,7 @@ public abstract class Correspondence<A extends @Nullable Object, E extends @Null
    */
   @Deprecated
   @Override
-  public final boolean equals(@Nullable Object o) {
+  public final boolean equals(@Nullable Object other) {
     throw new UnsupportedOperationException(
         "Correspondence.equals(object) is not supported. If you meant to compare objects, use"
             + " .compare(actual, expected) instead.");

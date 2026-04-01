@@ -19,33 +19,37 @@ import static com.google.common.base.CaseFormat.LOWER_CAMEL;
 import static com.google.common.base.CaseFormat.UPPER_CAMEL;
 import static com.google.common.base.CharMatcher.whitespace;
 import static com.google.common.base.MoreObjects.firstNonNull;
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Strings.lenientFormat;
+import static com.google.common.primitives.Booleans.asList;
+import static com.google.common.primitives.Bytes.asList;
+import static com.google.common.primitives.Chars.asList;
+import static com.google.common.primitives.Ints.asList;
+import static com.google.common.primitives.Longs.asList;
+import static com.google.common.primitives.Shorts.asList;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
+import static com.google.common.truth.Platform.classMetadataUnsupported;
 import static com.google.common.truth.Platform.doubleToString;
 import static com.google.common.truth.Platform.floatToString;
+import static com.google.common.truth.Platform.isInstanceOfType;
 import static com.google.common.truth.Platform.isKotlinRange;
 import static com.google.common.truth.Platform.kotlinRangeContains;
-import static com.google.common.truth.Platform.stringValueOfNonFloatingPoint;
+import static com.google.common.truth.Platform.stringValueForFailure;
 import static com.google.common.truth.Subject.EqualityCheck.SAME_INSTANCE;
 import static com.google.common.truth.SubjectUtils.accumulate;
 import static com.google.common.truth.SubjectUtils.append;
 import static com.google.common.truth.SubjectUtils.concat;
+import static com.google.common.truth.SubjectUtils.longName;
 import static com.google.common.truth.SubjectUtils.sandwich;
+import static java.lang.Double.doubleToLongBits;
+import static java.lang.Float.floatToIntBits;
+import static java.lang.reflect.Array.getLength;
 import static java.util.Arrays.asList;
 
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.primitives.Booleans;
-import com.google.common.primitives.Bytes;
-import com.google.common.primitives.Chars;
-import com.google.common.primitives.Ints;
-import com.google.common.primitives.Longs;
-import com.google.common.primitives.Shorts;
+import com.google.common.primitives.Primitives;
 import com.google.common.truth.FailureMetadata.OldAndNewValuesAreSimilar;
 import com.google.errorprone.annotations.DoNotCall;
 import com.google.errorprone.annotations.ForOverride;
@@ -53,6 +57,7 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -68,9 +73,6 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>For information about writing a custom {@link Subject}, see <a
  * href="https://truth.dev/extension">our doc on extensions</a>.
- *
- * @author David Saff
- * @author Christian Gruber
  */
 public class Subject {
   /**
@@ -91,68 +93,56 @@ public class Subject {
     SubjectT createSubject(FailureMetadata metadata, @Nullable ActualT actual);
   }
 
-  private final @Nullable FailureMetadata metadata;
+  private final FailureMetadata metadata;
   private final @Nullable Object actual;
-  private final @Nullable String typeDescriptionOverride;
 
   /**
-   * Constructor for use by subclasses. If you want to create an instance of this class itself, call
-   * {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
+   * The constructor is for use by subclasses only. If you want to create an instance of this class
+   * itself, call {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
    */
   protected Subject(FailureMetadata metadata, @Nullable Object actual) {
-    this(metadata, actual, /* typeDescriptionOverride= */ null);
-  }
-
-  /**
-   * Special constructor that lets subclasses provide a description of the type they're testing. For
-   * example, {@link ThrowableSubject} passes the description "throwable." Normally, Truth is able
-   * to infer this name from the class name. However, if we lack runtime type information (notably,
-   * under j2cl with class metadata off), we might not have access to the original class name.
-   *
-   * <p>We don't expect to make this a public API: Class names are nearly always available. It's
-   * just that we want to be able to run Truth's own tests run with class metadata off, and it's
-   * easier to tweak the subjects to know their own names rather than generalize the tests to accept
-   * obfuscated names.
-   */
-  Subject(
-      @Nullable FailureMetadata metadata,
-      @Nullable Object actual,
-      @Nullable String typeDescriptionOverride) {
-    this.metadata = metadata == null ? null : metadata.updateForSubject(this);
+    this.metadata = metadata.updateForSubject(this);
     this.actual = actual;
-    this.typeDescriptionOverride = typeDescriptionOverride;
   }
 
-  /** Fails if the subject is not null. */
+  /** Checks that the value under test is null. */
   public void isNull() {
     standardIsEqualTo(null);
   }
 
-  /** Fails if the subject is null. */
+  /**
+   * Checks that the value under test is not null.
+   *
+   * <p>Kotlin users: A call to {@code assertThat(foo).isNotNull()} does not perform a smart cast on
+   * {@code foo}. If you require a smart cast, consider using {@code foo!!} or {@code
+   * assertNotNull(foo)} instead. The tradeoffs are that those will look different than any
+   * surrounding Truth assertions and that they will produce somewhat worse failure messages.
+   */
   public void isNotNull() {
     standardIsNotEqualTo(null);
   }
 
   /**
-   * Fails if the subject is not equal to the given object. For the purposes of this comparison, two
-   * objects are equal if any of the following is true:
+   * Checks that the value under test is equal to the given object. For the purposes of this
+   * comparison, two objects are equal if any of the following is true:
    *
    * <ul>
-   *   <li>they are equal according to {@link Objects#equal}
+   *   <li>they are equal according to {@link Objects#equals}
    *   <li>they are arrays and are considered equal by the appropriate {@link Arrays#equals}
    *       overload
-   *   <li>they are boxed integer types ({@code Byte}, {@code Short}, {@code Character}, {@code
-   *       Integer}, or {@code Long}) and they are numerically equal when converted to {@code Long}.
-   *   <li>the actual value is a boxed floating-point type ({@code Double} or {@code Float}), the
-   *       expected value is an {@code Integer}, and the two are numerically equal when converted to
-   *       {@code Double}. (This allows {@code assertThat(someDouble).isEqualTo(0)} to pass.)
+   *   <li>they are boxed integer types ({@link Byte}, {@link Short}, {@link Character}, {@link
+   *       Integer}, or {@link Long}) and they are numerically equal when converted to {@link Long}.
+   *   <li>the actual value is a boxed floating-point type ({@link Double} or {@link Float}), the
+   *       expected value is an {@link Integer}, and the two are numerically equal when converted to
+   *       {@link Double}. (This allows {@code assertThat(someDouble).isEqualTo(0)} to pass.)
    * </ul>
    *
    * <p><b>Note:</b> This method does not test the {@link Object#equals} implementation itself; it
    * <i>assumes</i> that method is functioning correctly according to its contract. Testing an
    * {@code equals} implementation requires a utility such as <a
-   * href="https://mvnrepository.com/artifact/com.google.guava/guava-testlib">guava-testlib</a>'s <a
-   * href="https://static.javadoc.io/com.google.guava/guava-testlib/23.0/com/google/common/testing/EqualsTester.html">EqualsTester</a>.
+   * href="https://central.sonatype.com/artifact/com.google.guava/guava-testlib">guava-testlib</a>'s
+   * <a
+   * href="https://www.javadoc.io/doc/com.google.guava/guava-testlib/latest/com/google/common/testing/EqualsTester.html">EqualsTester</a>.
    *
    * <p>In some cases, this method might not even call {@code equals}. It may instead perform other
    * tests that will return the same result as long as {@code equals} is implemented according to
@@ -176,22 +166,22 @@ public class Subject {
   }
 
   /**
-   * Fails if the subject is equal to the given object. The meaning of equality is the same as for
-   * the {@link #isEqualTo} method.
+   * Checks that the value under test is not equal to the given object. The meaning of equality is
+   * the same as for the {@link #isEqualTo} method.
    */
-  public void isNotEqualTo(@Nullable Object unexpected) {
-    standardIsNotEqualTo(unexpected);
+  public void isNotEqualTo(@Nullable Object other) {
+    standardIsNotEqualTo(other);
   }
 
-  private void standardIsNotEqualTo(@Nullable Object unexpected) {
-    ComparisonResult difference = compareForEquality(unexpected);
+  private void standardIsNotEqualTo(@Nullable Object other) {
+    ComparisonResult difference = compareForEquality(other);
     if (difference.valuesAreEqual()) {
-      String unexpectedAsString = formatActualOrExpected(unexpected);
-      if (actualCustomStringRepresentation().equals(unexpectedAsString)) {
-        failWithoutActual(fact("expected not to be", unexpectedAsString));
+      String otherAsString = formatActualOrExpected(other);
+      if (actualCustomStringRepresentation().equals(otherAsString)) {
+        failWithoutActual(fact("expected not to be", otherAsString));
       } else {
         failWithoutActual(
-            fact("expected not to be", unexpectedAsString),
+            fact("expected not to be", otherAsString),
             fact(
                 "but was; string representation of actual value",
                 actualCustomStringRepresentation()));
@@ -253,7 +243,7 @@ public class Subject {
 
   private static long integralValue(Object o) {
     if (o instanceof Character) {
-      return (long) ((Character) o).charValue();
+      return (Character) o;
     } else if (o instanceof Number) {
       return ((Number) o).longValue();
     } else {
@@ -261,7 +251,12 @@ public class Subject {
     }
   }
 
-  /** Fails if the subject is not the same instance as the given object. */
+  /**
+   * Checks that the value under test is the same instance as the given object.
+   *
+   * <p>This method considers {@code null} to be "the same instance as" {@code null} and not the
+   * same instance as anything else.
+   */
   public final void isSameInstanceAs(@Nullable Object expected) {
     if (actual != expected) {
       failEqualityCheck(
@@ -277,50 +272,71 @@ public class Subject {
     }
   }
 
-  /** Fails if the subject is the same instance as the given object. */
-  public final void isNotSameInstanceAs(@Nullable Object unexpected) {
-    if (actual == unexpected) {
+  /**
+   * Checks that the value under test is not the same instance as the given object.
+   *
+   * <p>This method considers {@code null} to be "the same instance as" {@code null} and not the
+   * same instance as anything else.
+   */
+  public final void isNotSameInstanceAs(@Nullable Object other) {
+    if (actual == other) {
       /*
        * We use actualCustomStringRepresentation() because it might be overridden to be better than
-       * actual.toString()/unexpected.toString().
+       * actual.toString()/other.toString().
        */
       failWithoutActual(
           fact("expected not to be specific instance", actualCustomStringRepresentation()));
     }
   }
 
-  /** Fails if the subject is not an instance of the given class. */
-  public void isInstanceOf(Class<?> clazz) {
+  /**
+   * Checks that the value under test is an instance of the given class.
+   *
+   * <p>Kotlin users: A call to {@code assertThat(foo).isInstanceOf(Bar::class.java)} does not
+   * perform a smart cast on {@code foo}. If you require a smart cast, consider using {@code foo as
+   * Bar} or {@code assertIs<Bar>(foo)} instead. The tradeoffs are that those will look different
+   * than any surrounding Truth assertions and that they will produce worse failure messages (for
+   * example, by not including the actual value, only its type).
+   */
+  public void isInstanceOf(@Nullable Class<?> clazz) {
     if (clazz == null) {
-      throw new NullPointerException("clazz");
+      failWithoutActual(
+          simpleFact("could not perform instanceof check because expected type was null"),
+          actualValue("value to check was"));
+      return;
     }
+    clazz = Primitives.wrap(clazz);
     if (actual == null) {
-      failWithActual("expected instance of", clazz.getName());
+      failWithActual("expected instance of", longName(clazz));
       return;
     }
     if (!isInstanceOfType(actual, clazz)) {
-      if (Platform.classMetadataUnsupported()) {
+      if (classMetadataUnsupported()) {
         throw new UnsupportedOperationException(
             actualCustomStringRepresentation()
                 + ", an instance of "
-                + actual.getClass().getName()
+                + longName(actual.getClass())
                 + ", may or may not be an instance of "
-                + clazz.getName()
+                + longName(clazz)
                 + ". Under -XdisableClassMetadata, we do not have enough information to tell.");
       }
       failWithoutActual(
-          fact("expected instance of", clazz.getName()),
-          fact("but was instance of", actual.getClass().getName()),
+          fact("expected instance of", longName(clazz)),
+          fact("but was instance of", longName(actual.getClass())),
           fact("with value", actualCustomStringRepresentation()));
     }
   }
 
-  /** Fails if the subject is an instance of the given class. */
-  public void isNotInstanceOf(Class<?> clazz) {
+  /** Checks that the value under test is not an instance of the given class. */
+  public void isNotInstanceOf(@Nullable Class<?> clazz) {
     if (clazz == null) {
-      throw new NullPointerException("clazz");
+      failWithoutActual(
+          simpleFact("could not perform instanceof check because expected type was null"),
+          actualValue("value to check was"));
+      return;
     }
-    if (Platform.classMetadataUnsupported()) {
+    clazz = Primitives.wrap(clazz);
+    if (classMetadataUnsupported()) {
       throw new UnsupportedOperationException(
           "isNotInstanceOf is not supported under -XdisableClassMetadata");
     }
@@ -328,7 +344,7 @@ public class Subject {
       return; // null is not an instance of clazz.
     }
     if (isInstanceOfType(actual, clazz)) {
-      failWithActual("expected not to be an instance of", clazz.getName());
+      failWithActual("expected not to be an instance of", longName(clazz));
       /*
        * TODO(cpovirk): Consider including actual.getClass() if it's not clazz itself but only a
        * subtype.
@@ -336,21 +352,16 @@ public class Subject {
     }
   }
 
-  private static boolean isInstanceOfType(Object instance, Class<?> clazz) {
-    checkArgument(
-        !clazz.isPrimitive(),
-        "Cannot check instanceof for primitive type %s. Pass the wrapper class instead.",
-        clazz.getSimpleName());
-    /*
-     * TODO(cpovirk): Make the message include `Primitives.wrap(clazz).getSimpleName()` once that
-     * method is available in a public guava-gwt release that we depend on.
-     */
-    return Platform.isInstanceOfType(instance, clazz);
-  }
-
-  /** Fails unless the subject is equal to any element in the given iterable. */
+  /** Checks that the value under test is equal to any element in the given iterable. */
   public void isIn(@Nullable Iterable<?> iterable) {
-    checkNotNull(iterable);
+    if (iterable == null) {
+      failWithoutActual(
+          simpleFact(
+              "could not perform equality check because iterable of elements to compare to was"
+                  + " null"),
+          valueToCompareWas());
+      return;
+    }
     if (!contains(iterable, actual)) {
       failWithActual("expected any of", iterable);
     }
@@ -363,61 +374,69 @@ public class Subject {
     return Iterables.contains(haystack, needle);
   }
 
-  /** Fails unless the subject is equal to any of the given elements. */
+  /** Checks that the value under test is equal to any of the given elements. */
   public void isAnyOf(
       @Nullable Object first, @Nullable Object second, @Nullable Object @Nullable ... rest) {
     isIn(accumulate(first, second, rest));
   }
 
-  /** Fails if the subject is equal to any element in the given iterable. */
+  /** Checks that the value under test is not equal to any element in the given iterable. */
   public void isNotIn(@Nullable Iterable<?> iterable) {
-    checkNotNull(iterable);
+    if (iterable == null) {
+      failWithoutActual(
+          simpleFact(
+              "could not perform equality check because iterable of elements to compare to was"
+                  + " null"),
+          valueToCompareWas());
+      return;
+    }
     if (Iterables.contains(iterable, actual)) {
       failWithActual("expected not to be any of", iterable);
     }
   }
 
-  /** Fails if the subject is equal to any of the given elements. */
+  /** Checks that the value under test is not equal to any of the given elements. */
   public void isNoneOf(
       @Nullable Object first, @Nullable Object second, @Nullable Object @Nullable ... rest) {
     isNotIn(accumulate(first, second, rest));
   }
 
   /** Returns the actual value under test. */
-  final @Nullable Object actual() {
+  final @Nullable Object actualForPackageMembersToCall() {
     return actual;
   }
 
   /**
-   * Supplies the direct string representation of the actual value to other methods which may prefix
-   * or otherwise position it in an error message. This should only be overridden to provide an
-   * improved string representation of the value under test, as it would appear in any given error
-   * message, and should not be used for additional prefixing.
+   * Returns a string representation of the actual value for inclusion in failure messages.
    *
    * <p>Subjects should override this with care.
    *
-   * <p>By default, this returns {@code String.ValueOf(getActualValue())}.
+   * <p>By default, this method returns {@code String.valueOf(getActualValue())} for most types. It
+   * does have some special logic for a few cases, like arrays.
    */
   /*
-   * TODO(cpovirk): Consider whether this API pulls its weight. If users want to format the actual
-   * value, maybe they should do so themselves? Of course, they won't have a chance to use a custom
-   * format for inherited implementations like isEqualTo(). But if they want to format the actual
-   * value specially, then it seems likely that they'll want to format the expected value specially,
-   * too. And that applies just as well to APIs like isIn(). Maybe we'll want an API that supports
-   * formatting those values, too (like formatActualOrExpected below)? See also the related
-   * b/70930431. But note that we are likely to use this from FailureMetadata, at least in the short
-   * term, for better or for worse.
+   * TODO(cpovirk): Consider potential improvements to formatting APIs. For example, if users want
+   * to format the actual value specially, then it seems likely that they'll want to format the
+   * expected value specially, too. And that applies just as well to APIs like isIn(). Maybe we'll
+   * want an API that supports formatting those values, too (like formatActualOrExpected below)? See
+   * also the related b/70930431.
    */
   @ForOverride
   protected String actualCustomStringRepresentation() {
     return formatActualOrExpected(actual);
   }
 
+  /**
+   * Access to {@link #actualCustomStringRepresentation()} from within the package. For creating
+   * {@link Fact} instances, we should use {@link #butWas} or {@link #actualValue} instead of this.
+   * This method is useful primarily for delegating from one subject's {@link
+   * #actualCustomStringRepresentation} method to another's.
+   */
   final String actualCustomStringRepresentationForPackageMembersToCall() {
     return actualCustomStringRepresentation();
   }
 
-  private String formatActualOrExpected(@Nullable Object o) {
+  private static String formatActualOrExpected(@Nullable Object o) {
     if (o instanceof byte[]) {
       return base16((byte[]) o);
     } else if (o != null && o.getClass().isArray()) {
@@ -433,7 +452,7 @@ public class Subject {
        * formatActualOrExpected for its handling of byte[] and float/double? Or is there some other
        * restructuring of this set of methods that we should undertake?
        */
-      return stringValueOfNonFloatingPoint(o);
+      return stringValueForFailure(o);
     }
   }
 
@@ -441,33 +460,33 @@ public class Subject {
   private static String base16(byte[] bytes) {
     StringBuilder sb = new StringBuilder(2 * bytes.length);
     for (byte b : bytes) {
-      sb.append(hexDigits[(b >> 4) & 0xf]).append(hexDigits[b & 0xf]);
+      sb.append(hexDigitsUpper[(b >> 4) & 0xf]).append(hexDigitsUpper[b & 0xf]);
     }
     return sb.toString();
   }
 
-  private static final char[] hexDigits = "0123456789ABCDEF".toCharArray();
+  private static final char[] hexDigitsUpper = "0123456789ABCDEF".toCharArray();
 
   private static @Nullable Object arrayAsListRecursively(@Nullable Object input) {
     if (input instanceof Object[]) {
       return Lists.<@Nullable Object, @Nullable Object>transform(
           asList((@Nullable Object[]) input), Subject::arrayAsListRecursively);
     } else if (input instanceof boolean[]) {
-      return Booleans.asList((boolean[]) input);
+      return asList((boolean[]) input);
     } else if (input instanceof int[]) {
-      return Ints.asList((int[]) input);
+      return asList((int[]) input);
     } else if (input instanceof long[]) {
-      return Longs.asList((long[]) input);
+      return asList((long[]) input);
     } else if (input instanceof short[]) {
-      return Shorts.asList((short[]) input);
+      return asList((short[]) input);
     } else if (input instanceof byte[]) {
-      return Bytes.asList((byte[]) input);
+      return asList((byte[]) input);
     } else if (input instanceof double[]) {
       return doubleArrayAsString((double[]) input);
     } else if (input instanceof float[]) {
       return floatArrayAsString((float[]) input);
     } else if (input instanceof char[]) {
-      return Chars.asList((char[]) input);
+      return asList((char[]) input);
     } else {
       return input;
     }
@@ -503,7 +522,7 @@ public class Subject {
 
     private static final ComparisonResult EQUAL = new ComparisonResult(null);
     private static final ComparisonResult DIFFERENT_NO_DESCRIPTION =
-        new ComparisonResult(ImmutableList.<Fact>of());
+        new ComparisonResult(ImmutableList.of());
 
     private final @Nullable ImmutableList<Fact> facts;
 
@@ -516,7 +535,7 @@ public class Subject {
     }
 
     ImmutableList<Fact> factsOrEmpty() {
-      return firstNonNull(facts, ImmutableList.<Fact>of());
+      return firstNonNull(facts, ImmutableList.of());
     }
 
     /** Returns an instance with the same "equal"/"not-equal" bit but with no description. */
@@ -526,9 +545,9 @@ public class Subject {
   }
 
   /**
-   * Returns null if the arrays are equal. If not equal, returns a string comparing the two arrays,
-   * displaying them in the style "[1, 2, 3]" to supplement the main failure message, which uses the
-   * style "010203."
+   * Returns {@link ComparisonResult#equal} if the arrays are equal. If not equal, returns a string
+   * comparing the two arrays, displaying them in the style "[1, 2, 3]" to supplement the main
+   * failure message, which uses the style "010203."
    */
   private static ComparisonResult checkByteArrayEquals(byte[] expected, byte[] actual) {
     if (Arrays.equals(expected, actual)) {
@@ -539,8 +558,8 @@ public class Subject {
   }
 
   /**
-   * Returns null if the arrays are equal, recursively. If not equal, returns the string of the
-   * index at which they're different.
+   * Returns {@link ComparisonResult#equal} if the arrays are equal, recursively. If not equal,
+   * returns the string of the index at which they're different.
    */
   /*
    * TODO(cpovirk): Decide whether it's worthwhile to go to this trouble to display the index at
@@ -561,8 +580,8 @@ public class Subject {
       return ComparisonResult.differentWithDescription(
           indexFact, fact("expected", expectedType), fact("but was", actualType));
     }
-    int actualLength = Array.getLength(actualArray);
-    int expectedLength = Array.getLength(expectedArray);
+    int actualLength = getLength(actualArray);
+    int expectedLength = getLength(expectedArray);
     if (expectedLength != actualLength) {
       Fact indexFact =
           lastIndex.isEmpty()
@@ -614,11 +633,11 @@ public class Subject {
 
   private static boolean gwtSafeObjectEquals(@Nullable Object actual, @Nullable Object expected) {
     if (actual instanceof Double && expected instanceof Double) {
-      return Double.doubleToLongBits((Double) actual) == Double.doubleToLongBits((Double) expected);
+      return doubleToLongBits((Double) actual) == doubleToLongBits((Double) expected);
     } else if (actual instanceof Float && expected instanceof Float) {
-      return Float.floatToIntBits((Float) actual) == Float.floatToIntBits((Float) expected);
+      return floatToIntBits((Float) actual) == floatToIntBits((Float) expected);
     } else {
-      return Objects.equal(actual, expected);
+      return Objects.equals(actual, expected);
     }
   }
 
@@ -636,19 +655,6 @@ public class Subject {
       itemAsStrings.add(floatToString(item));
     }
     return itemAsStrings;
-  }
-
-  /**
-   * Returns a builder for creating a derived subject but without providing information about how
-   * the derived subject will relate to the current subject. In most cases, you should provide such
-   * information by using {@linkplain #check(String, Object...) the other overload}.
-   *
-   * @deprecated Use {@linkplain #check(String, Object...) the other overload}, which requires you
-   *     to supply more information to include in any failure messages.
-   */
-  @Deprecated
-  final StandardSubjectBuilder check() {
-    return new StandardSubjectBuilder(checkNotNull(metadata).updateForCheckCall());
   }
 
   /**
@@ -690,19 +696,63 @@ public class Subject {
     return doCheck(OldAndNewValuesAreSimilar.SIMILAR, format, args);
   }
 
+  /**
+   * Returns a builder for creating a subject for an object that is "close enough" to the original
+   * actual value.
+   *
+   * <p>This is a niche API: When one {@link Subject} wants to delegate to another, it should
+   * normally use {@link #check(String, Object...)}, which augments the failure message by:
+   *
+   * <ul>
+   *   <li>specifying which <i>part</i> of the actual value we are asserting about (e.g., "value of:
+   *       foo.size()")
+   *   <li>including both the original actual value and the relevant part of that value (e.g., both
+   *       the collection and its size)
+   * </ul>
+   *
+   * Thus, {@code substituteCheck()} is useful only when the new assertion is still (roughly
+   * speaking) "about" the entire actual value. For example, {@link StreamSubject} uses this method
+   * to create an {@link IterableSubject} for the contents of the stream.
+   *
+   * <p>The result of {@code substituteCheck()} should be used carefully. For example, it should
+   * <b>never</b> be returned to users unless the new subject has the exact full actual value as the
+   * original one had. (As of this writing, we never do that, but that may change someday
+   * (b/135436697? b/333091510?).) That's because:
+   *
+   * <ul>
+   *   <li>If the assertion is about only a <i>part</i> of the actual value (or about some derived
+   *       value, as in {@link ObjectArraySubject#asList}), then we should use {@link #check(String,
+   *       Object...)}, as discussed above. (In some cases, we should instead introduce a non-{@link
+   *       Subject} type, such as {@link StringSubject.CaseInsensitiveStringComparison}.)
+   *   <li>Otherwise, we don't want to present an assertion as about the original actual value when
+   *       it's actually about some "stand-in" value. For example (though this isn't a great
+   *       example), we wouldn't want for {@code assertThat(stream).isEqualTo(expected)} to use
+   *       {@code substituteCheck().that(stream.toList())} internally: The test would be comparing
+   *       the <i>list</i> for equality, but the message would suggest that it's comparing the
+   *       <i>stream</i>.
+   * </ul>
+   *
+   * Additionally, consider that the messages produced by the new {@link Subject} will be used
+   * directly. So, if the messages in {@code FooSubject} refers to "the actual foo," then any {@link
+   * Subject} that uses {@code substituteCheck()} to create a {@code FooSubject} will still see "the
+   * actual foo" in the messages, even if the original actual value was of some different type.
+   */
+  final StandardSubjectBuilder substituteCheck() {
+    return new StandardSubjectBuilder(metadata);
+  }
+
   private StandardSubjectBuilder doCheck(
       OldAndNewValuesAreSimilar valuesAreSimilar, String format, @Nullable Object[] args) {
-    LazyMessage message = new LazyMessage(format, args);
+    LazyMessage message = LazyMessage.create(format, args);
     return new StandardSubjectBuilder(
-        checkNotNull(metadata)
-            .updateForCheckCall(
-                valuesAreSimilar, /* descriptionUpdate= */ input -> input + "." + message));
+        metadata.updateForCheckCall(
+            valuesAreSimilar, /* descriptionUpdate= */ input -> input + "." + message));
   }
 
   /**
    * Begins a new call chain that ignores any failures. This is useful for subjects that normally
    * delegate with to other subjects by using {@link #check} but have already reported a failure. In
-   * such cases it may still be necessary to return a {@code Subject} instance even though any
+   * such cases it may still be necessary to return a {@link Subject} instance even though any
    * subsequent assertions are meaningless. For example, if a user chains together more {@link
    * ThrowableSubject#hasCauseThat} calls than the actual exception has causes, {@code hasCauseThat}
    * returns {@code ignoreCheck().that(... a dummy exception ...)}.
@@ -725,7 +775,16 @@ public class Subject {
    *
    * <p>Example usage: The check {@code contains(String)} calls {@code failWithActual("expected to
    * contain", string)}.
+   *
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
    */
+  @SuppressWarnings("FailWithActualOneFact") // suggests infinite recursion
   protected final void failWithActual(String key, @Nullable Object value) {
     failWithActual(fact(key, value));
   }
@@ -743,63 +802,33 @@ public class Subject {
    *
    * <p>Example usage: The check {@code isEmpty()} calls {@code failWithActual(simpleFact("expected
    * to be empty"))}.
+   *
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
    */
   protected final void failWithActual(Fact first, Fact... rest) {
-    doFail(sandwich(first, rest, butWas()));
+    metadata.fail(sandwich(first, rest, butWas()));
   }
 
   // TODO(cpovirk): Consider making this protected if there's a need for it.
+  /**
+   * Internal variant of {@link #failWithActual(Fact, Fact...)} that accepts an {@link Iterable}.
+   *
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
+   */
   final void failWithActual(Iterable<Fact> facts) {
-    doFail(append(ImmutableList.copyOf(facts), butWas()));
-  }
-
-  /**
-   * Reports a failure constructing a message from a simple verb.
-   *
-   * @param check the check being asserted
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithActual(Fact, Fact...) failWithActual}{@code (}{@link Fact#simpleFact
-   *     simpleFact(...)}{@code )}. However, if you want to preserve your exact failure message as a
-   *     migration aid, you can inline this method (and then inline the resulting method call, as
-   *     well).
-   */
-  @Deprecated
-  final void fail(String check) {
-    fail(check, new Object[0]);
-  }
-
-  /**
-   * Assembles a failure message and passes such to the FailureStrategy
-   *
-   * @param verb the check being asserted
-   * @param other the value against which the subject is compared
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithActual(String, Object)}. However, if you want to preserve your exact failure
-   *     message as a migration aid, you can inline this method (and then inline the resulting
-   *     method call, as well).
-   */
-  @Deprecated
-  final void fail(String verb, Object other) {
-    fail(verb, new Object[] {other});
-  }
-
-  /**
-   * Assembles a failure message and passes such to the FailureStrategy
-   *
-   * @param verb the check being asserted
-   * @param messageParts the expectations against which the subject is compared
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithActual(Fact, Fact...)}. However, if you want to preserve your exact failure
-   *     message as a migration aid, you can inline this method.
-   */
-  @Deprecated
-  final void fail(String verb, @Nullable Object... messageParts) {
-    StringBuilder message = new StringBuilder("Not true that <");
-    message.append(actualCustomStringRepresentation()).append("> ").append(verb);
-    for (Object part : messageParts) {
-      message.append(" <").append(part).append(">");
-    }
-    failWithoutActual(simpleFact(message.toString()));
+    metadata.fail(append(ImmutableList.copyOf(facts), butWas()));
   }
 
   enum EqualityCheck {
@@ -816,17 +845,36 @@ public class Subject {
   /**
    * Special version of {@link #failEqualityCheck} for use from {@link IterableSubject}, documented
    * further there.
+   *
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
    */
   final void failEqualityCheckForEqualsWithoutDescription(@Nullable Object expected) {
     failEqualityCheck(EqualityCheck.EQUAL, expected, ComparisonResult.differentNoDescription());
   }
 
+  /**
+   * Fails, potentially producing a {@code ComparisonFailure}.
+   *
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
+   */
   private void failEqualityCheck(
       EqualityCheck equalityCheck, @Nullable Object expected, ComparisonResult difference) {
     String actualString = actualCustomStringRepresentation();
     String expectedString = formatActualOrExpected(expected);
-    String actualClass = actual == null ? "(null reference)" : actual.getClass().getName();
-    String expectedClass = expected == null ? "(null reference)" : expected.getClass().getName();
+    String actualClass = actual == null ? "(null reference)" : longName(actual.getClass());
+    String expectedClass = expected == null ? "(null reference)" : longName(expected.getClass());
 
     /*
      * It's a little odd for expectedString to be formatActualOrExpected(expected) but actualString
@@ -870,8 +918,7 @@ public class Subject {
       }
     } else {
       if (equalityCheck == EqualityCheck.EQUAL && actual != null && expected != null) {
-        checkNotNull(metadata)
-            .failEqualityCheck(difference.factsOrEmpty(), expectedString, actualString);
+        metadata.failEqualityCheck(difference.factsOrEmpty(), expectedString, actualString);
       } else {
         failEqualityCheckNoComparisonFailure(
             difference,
@@ -975,81 +1022,26 @@ public class Subject {
 
   // From SourceCodeEscapers:
 
-  private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+  private static final char[] hexDigitsLower = "0123456789abcdef".toCharArray();
 
   private static char[] asUnicodeHexEscape(char c) {
     // Equivalent to String.format("\\u%04x", (int) c);
     char[] r = new char[6];
     r[0] = '\\';
     r[1] = 'u';
-    r[5] = HEX_DIGITS[c & 0xF];
+    r[5] = hexDigitsLower[c & 0xF];
     c = (char) (c >>> 4);
-    r[4] = HEX_DIGITS[c & 0xF];
+    r[4] = hexDigitsLower[c & 0xF];
     c = (char) (c >>> 4);
-    r[3] = HEX_DIGITS[c & 0xF];
+    r[3] = hexDigitsLower[c & 0xF];
     c = (char) (c >>> 4);
-    r[2] = HEX_DIGITS[c & 0xF];
+    r[2] = hexDigitsLower[c & 0xF];
     return r;
   }
 
   private void failEqualityCheckNoComparisonFailure(ComparisonResult difference, Fact... facts) {
     // TODO(cpovirk): Is it possible for difference.factsOrEmpty() to be nonempty? If not, remove.
-    doFail(concat(asList(facts), difference.factsOrEmpty()));
-  }
-
-  /**
-   * Assembles a failure message and passes it to the FailureStrategy
-   *
-   * @param verb the check being asserted
-   * @param expected the expectations against which the subject is compared
-   * @param failVerb the failure of the check being asserted
-   * @param actual the actual value the subject was compared against
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithActual(Fact, Fact...)}. However, if you want to preserve your exact failure
-   *     message as a migration aid, you can inline this method.
-   */
-  @Deprecated
-  final void failWithBadResults(String verb, Object expected, String failVerb, Object actual) {
-    String message =
-        lenientFormat(
-            "Not true that <%s> %s <%s>. It %s <%s>",
-            actualCustomStringRepresentation(),
-            verb,
-            expected,
-            failVerb,
-            (actual == null) ? "null reference" : actual);
-    failWithoutActual(simpleFact(message));
-  }
-
-  /**
-   * Assembles a failure message with an alternative representation of the wrapped subject and
-   * passes it to the FailureStrategy
-   *
-   * @param verb the check being asserted
-   * @param expected the expected value of the check
-   * @param actual the custom representation of the subject to be reported in the failure.
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithoutActual(Fact, Fact...)}. However, if you want to preserve your exact failure
-   *     message as a migration aid, you can inline this method.
-   */
-  @Deprecated
-  final void failWithCustomSubject(String verb, Object expected, Object actual) {
-    String message =
-        lenientFormat(
-            "Not true that <%s> %s <%s>",
-            (actual == null) ? "null reference" : actual, verb, expected);
-    failWithoutActual(simpleFact(message));
-  }
-
-  /**
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithoutActual(Fact, Fact...) failWithoutActual}{@code (}{@link Fact#simpleFact
-   *     simpleFact(...)}{@code )}. However, if you want to preserve your exact failure message as a
-   *     migration aid, you can inline this method.
-   */
-  @Deprecated
-  final void failWithoutSubject(String check) {
-    failWithoutActual(simpleFact(lenientFormat("Not true that the subject %s", check)));
+    metadata.fail(concat(asList(facts), difference.factsOrEmpty()));
   }
 
   /**
@@ -1071,29 +1063,38 @@ public class Subject {
    *
    * <p>Example usage: The check {@code isEmpty()} calls {@code failWithActual(simpleFact("expected
    * to be empty"))}.
+   *
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
    */
   protected final void failWithoutActual(Fact first, Fact... rest) {
-    doFail(ImmutableList.copyOf(Lists.asList(first, rest)));
+    metadata.fail(ImmutableList.copyOf(Lists.asList(first, rest)));
   }
 
   // TODO(cpovirk): Consider making this protected if there's a need for it.
   final void failWithoutActual(Iterable<Fact> facts) {
-    doFail(ImmutableList.copyOf(facts));
+    metadata.fail(ImmutableList.copyOf(facts));
   }
 
   /**
-   * Assembles a failure message without a given subject and passes it to the FailureStrategy
+   * Special failure method for {@link ThrowableSubject} to use when users try to assert about the
+   * cause or message of a null {@link Throwable}.
    *
-   * @param check the check being asserted
-   * @deprecated Prefer to construct {@link Fact}-style methods, typically by using {@link
-   *     #failWithoutActual(Fact, Fact...) failWithoutActual}{@code (}{@link Fact#simpleFact
-   *     simpleFact(...)}{@code )}. However, if you want to preserve your exact failure message as a
-   *     migration aid, you can inline this method (and then inline the resulting method call, as
-   *     well).
+   * <p><b>Note:</b> While Truth's {@code fail*()} methods usually throw {@link AssertionError},
+   * they do not do so in all cases: When users use an alternative {@link FailureStrategy}, such as
+   * {@link Expect}, the {@code fail*()} methods may instead record the failure somewhere and then
+   * return. To accommodate this, {@link Subject} methods should typically {@code return} after
+   * calling a {@code fail*()} method, rather than continue onward to potentially fail a second time
+   * or throw an exception. For cases in which a method needs to return another {@link Subject} to
+   * the user, see {@link #ignoreCheck()}.
    */
-  @Deprecated
-  final void failWithoutActual(String check) {
-    failWithoutSubject(check);
+  final void failForNullThrowable(String message) {
+    metadata.failForNullThrowable(message);
   }
 
   /**
@@ -1107,7 +1108,7 @@ public class Subject {
           + " assertThat(actual).equals(expected)?")
   @Deprecated
   @Override
-  public final boolean equals(@Nullable Object o) {
+  public final boolean equals(@Nullable Object other) {
     throw new UnsupportedOperationException(
         "Subject.equals() is not supported. Did you mean to call"
             + " assertThat(actual).isEqualTo(expected) instead of"
@@ -1139,7 +1140,7 @@ public class Subject {
   }
 
   /**
-   * Returns a "but was: <actual value>" string. This method should be rarely needed, since Truth
+   * Returns a "but was: [actual value]" fact. This method should be rarely needed, since Truth
    * inserts a "but was" fact by default for assertions. However, it's occasionally useful for calls
    * to {@code failWithoutActual} that want a "but was" fact but don't want it to come last, where
    * Truth inserts it by default.
@@ -1155,7 +1156,52 @@ public class Subject {
    * probably not enough reason to avoid adding this, but we can hold it back for now.
    */
   final Fact butWas() {
-    return fact("but was", actualCustomStringRepresentation());
+    return actualValue("but was");
+  }
+
+  /**
+   * Returns a "[key]: [actual value]" fact. This method should be rarely needed, since Truth
+   * inserts a "but was" fact by default for assertions. (Furthermore, for cases in which we want an
+   * acatual-value fact but not as the <i>final</i> fact, where Truth puts the actual value by
+   * default, Truth offers {@link #butWas()}.) However, {@code actualValue} occasionally useful when
+   * the actual value should be identified by a different key than "but was."
+   */
+  // TODO(cpovirk): Consider giving this protected access, as with butWas() itself.
+  final Fact actualValue(String key) {
+    return fact(key, actualCustomStringRepresentation());
+  }
+
+  final void arrayIsEmptyImpl() {
+    if (actual == null) {
+      failWithActual(simpleFact("expected an empty array"));
+    } else if (getLength(actual) > 0) {
+      failWithActual(simpleFact("expected to be empty"));
+    }
+  }
+
+  final void arrayIsNotEmptyImpl() {
+    if (actual == null) {
+      failWithActual(simpleFact("expected a nonempty array"));
+    } else if (getLength(actual) == 0) {
+      failWithoutActual(simpleFact("expected not to be empty"));
+    }
+  }
+
+  final void arrayHasLengthImpl(int length) {
+    if (length < 0) {
+      failWithoutActual(
+          simpleFact("could not perform length check because expected length was negative"),
+          fact("expected length", length),
+          actualValue("array was"));
+    } else if (actual == null) {
+      failWithActual("expected an array with length", length);
+    } else {
+      check("length").that(getLength(actual)).isEqualTo(length);
+    }
+  }
+
+  static ImmutableList.Builder<Fact> factsBuilder() {
+    return ImmutableList.builder();
   }
 
   /*
@@ -1163,21 +1209,17 @@ public class Subject {
    * only during every failure.
    */
   final String typeDescription() {
-    return typeDescriptionOrGuess(getClass(), typeDescriptionOverride);
-  }
-
-  private static String typeDescriptionOrGuess(
-      Class<? extends Subject> clazz, @Nullable String typeDescriptionOverride) {
+    String typeDescriptionOverride = TYPE_DESCRIPTION_OVERRIDES.get(getClass());
     if (typeDescriptionOverride != null) {
       return typeDescriptionOverride;
     }
     /*
-     * j2cl doesn't store enough metadata to know whether "Foo$BarSubject" is a nested class, so it
+     * J2CL doesn't store enough metadata to know whether "Foo$BarSubject" is a nested class, so it
      * can't tell whether the simple name is "Foo$BarSubject" or just "BarSubject": b/71808768. It
      * returns "Foo$BarSubject" to err on the side of preserving information. We want just
      * "BarSubject," so we strip any likely enclosing type ourselves.
      */
-    String subjectClass = clazz.getSimpleName().replaceFirst(".*[$]", "");
+    String subjectClass = getClass().getSimpleName().replaceFirst(".*[$]", "");
     String actualClass =
         (subjectClass.endsWith("Subject") && !subjectClass.equals("Subject"))
             ? subjectClass.substring(0, subjectClass.length() - "Subject".length())
@@ -1185,7 +1227,73 @@ public class Subject {
     return UPPER_CAMEL.to(LOWER_CAMEL, actualClass);
   }
 
-  private void doFail(ImmutableList<Fact> facts) {
-    checkNotNull(metadata).fail(facts);
+  private Fact valueToCompareWas() {
+    return actualValue("value to compare was");
   }
+
+  static Factory<Subject, Object> objects() {
+    return Subject::new;
+  }
+
+  /**
+   * A mapping from some {@link Subject} subclasses to descriptions of the types they're testing.
+   * For example, {@link ThrowableSubject} has the description "throwable." Normally, Truth is able
+   * to infer this description from the class name. However, if we lack runtime type information
+   * (notably, under J2CL with class metadata off), we might not have access to the original class
+   * name. (As of this writing, we don't run Truth's own tests under J2CL with class metadata off,
+   * but our users may run their own tests that way.)
+   *
+   * <p>Since Truth can normally infer this on its own, this mechanism is not something that would
+   * normally be useful outside of core Truth. But to support running Truth's own tests run with
+   * class metadata off, it's easier to tweak the {@link Subject} code to hard-code the descriptions
+   * we want than to generalize the tests to accept obfuscated names.
+   *
+   * <p>That said, we do sometimes use this mechanism to provide a simpler description than the one
+   * derived from the class name. For example, rather than say "primitiveBooleanArray," we say just
+   * "array." In theory, users could want to do that, too. Maybe someday we will provide them with a
+   * way to plug in their own descriptions.
+   *
+   * <p>Even within Truth itself, not all types need a {@code TYPE_DESCRIPTION_OVERRIDES} entry: At
+   * least with Truth's current failure messages, the type appears only when a {@link Subject} uses
+   * assertion chaining. (This can happen because the {@link Subject} exposes chaining it in its
+   * API, like in {@link ThrowableSubject#hasCauseThat}, or because it uses it internally, like in
+   * {@link MultisetSubject#hasCount}.)
+   *
+   * <p>Notice that we look up map values by the exact runtime {@link Subject} class, not using
+   * {@link Class#isInstance}. We do this so that a subclass does not inherit a description override
+   * from its superclass. That way, Truth can normally infer a description for it, which is likely
+   * to be more specific. For example, FooExceptionSubject would produce "fooException," not
+   * "throwable").
+   */
+  @SuppressWarnings("GoogleInternalApi") // The reference to a Google-internal class is stripped
+  private static final ImmutableMap<Class<? extends Subject>, String> TYPE_DESCRIPTION_OVERRIDES =
+      new ImmutableMap.Builder<Class<? extends Subject>, String>()
+          // keep-sorted start
+          .put(GuavaOptionalSubject.class, "optional")
+          .put(IntStreamSubject.class, "stream")
+          .put(IterableSubject.class, "iterable")
+          .put(LongStreamSubject.class, "stream")
+          .put(MapSubject.class, "map")
+          .put(MultimapSubject.class, "multimap")
+          .put(MultisetSubject.class, "multiset")
+          .put(ObjectArraySubject.class, "array")
+          .put(OptionalDoubleSubject.class, "optionalDouble")
+          .put(OptionalIntSubject.class, "optionalInt")
+          .put(OptionalLongSubject.class, "optionalLong")
+          .put(OptionalSubject.class, "optional")
+          .put(PrimitiveBooleanArraySubject.class, "array")
+          .put(PrimitiveByteArraySubject.class, "array")
+          .put(PrimitiveCharArraySubject.class, "array")
+          .put(PrimitiveDoubleArraySubject.class, "array")
+          .put(PrimitiveFloatArraySubject.class, "array")
+          .put(PrimitiveIntArraySubject.class, "array")
+          .put(PrimitiveLongArraySubject.class, "array")
+          .put(PrimitiveShortArraySubject.class, "array")
+          .put(StreamSubject.class, "stream")
+          .put(StringSubject.class, "string")
+          .put(TableSubject.class, "table")
+          .put(ThrowableSubject.class, "throwable")
+          .put(TruthFailureSubject.class, "failure")
+          // keep-sorted end
+          .buildOrThrow();
 }

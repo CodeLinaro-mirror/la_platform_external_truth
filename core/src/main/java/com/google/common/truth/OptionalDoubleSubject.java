@@ -17,31 +17,27 @@ package com.google.common.truth;
 
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
+import static com.google.common.truth.Platform.doubleToString;
 
 import java.util.OptionalDouble;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for Java 8 {@link OptionalDouble} subjects.
+ * A subject for {@link OptionalDouble} values.
  *
- * @author Ben Douglass
  * @since 1.3.0 (previously part of {@code truth-java8-extension})
  */
-@SuppressWarnings("Java7ApiChecker") // used only from APIs with Java 8 in their signatures
 @IgnoreJRERequirement
 public final class OptionalDoubleSubject extends Subject {
 
   private final @Nullable OptionalDouble actual;
 
-  OptionalDoubleSubject(
-      FailureMetadata failureMetadata,
-      @Nullable OptionalDouble subject,
-      @Nullable String typeDescription) {
-    super(failureMetadata, subject, typeDescription);
-    this.actual = subject;
+  private OptionalDoubleSubject(FailureMetadata failureMetadata, @Nullable OptionalDouble actual) {
+    super(failureMetadata, actual);
+    this.actual = actual;
   }
 
-  /** Fails if the {@link OptionalDouble} is empty or the subject is null. */
+  /** Checks that the actual {@link OptionalDouble} contains a value. */
   public void isPresent() {
     if (actual == null) {
       failWithActual(simpleFact("expected present optional"));
@@ -50,30 +46,31 @@ public final class OptionalDoubleSubject extends Subject {
     }
   }
 
-  /** Fails if the {@link OptionalDouble} is present or the subject is null. */
+  /** Checks that the actual {@link OptionalDouble} does not contain a value. */
   public void isEmpty() {
     if (actual == null) {
       failWithActual(simpleFact("expected empty optional"));
     } else if (actual.isPresent()) {
       failWithoutActual(
           simpleFact("expected to be empty"),
-          fact("but was present with value", actual.getAsDouble()));
+          fact("but was present with value", doubleToString(actual.getAsDouble())));
     }
   }
 
   /**
-   * Fails if the {@link OptionalDouble} does not have the given value or the subject is null. This
-   * method is <i>not</i> recommended when the code under test is doing any kind of arithmetic,
-   * since the exact result of floating point arithmetic is sensitive to apparently trivial changes.
-   * More sophisticated comparisons can be done using {@code assertThat(optional.getAsDouble())…}.
-   * This method is recommended when the code under test is specified as either copying a value
-   * without modification from its input or returning a well-defined literal or constant value.
+   * Checks that the actual {@link OptionalDouble} contains the given value. This method is
+   * <i>not</i> recommended when the code under test is doing any kind of arithmetic, since the
+   * exact result of floating point arithmetic is sensitive to apparently trivial changes. More
+   * sophisticated comparisons can be done using {@code assertThat(optional.getAsDouble())…}. This
+   * method is recommended when the code under test is specified as either copying a value without
+   * modification from its input or returning a well-defined literal or constant value.
    */
   public void hasValue(double expected) {
     if (actual == null) {
       failWithActual("expected an optional with value", expected);
     } else if (!actual.isPresent()) {
-      failWithoutActual(fact("expected to have value", expected), simpleFact("but was absent"));
+      failWithoutActual(
+          fact("expected to have value", doubleToString(expected)), simpleFact("but was absent"));
     } else {
       checkNoNeedToDisplayBothValues("getAsDouble()")
           .that(actual.getAsDouble())
@@ -93,6 +90,6 @@ public final class OptionalDoubleSubject extends Subject {
   @Deprecated
   @SuppressWarnings("InlineMeSuggester") // We want users to remove the surrounding call entirely.
   public static Factory<OptionalDoubleSubject, OptionalDouble> optionalDoubles() {
-    return (metadata, subject) -> new OptionalDoubleSubject(metadata, subject, "optionalDouble");
+    return OptionalDoubleSubject::new;
   }
 }

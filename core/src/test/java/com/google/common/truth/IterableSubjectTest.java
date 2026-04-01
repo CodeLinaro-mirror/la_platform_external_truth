@@ -15,10 +15,16 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.truth.ExpectFailure.assertThat;
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.FailureAssertions.assertFailureKeys;
+import static com.google.common.truth.FailureAssertions.assertFailureValue;
+import static com.google.common.truth.FailureAssertions.assertFailureValueIndexed;
 import static com.google.common.truth.Truth.assertThat;
 import static java.lang.String.CASE_INSENSITIVE_ORDER;
 import static java.util.Arrays.asList;
-import static org.junit.Assert.fail;
+import static java.util.Collections.singleton;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
@@ -26,6 +32,7 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.TreeSet;
+import org.jspecify.annotations.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -33,14 +40,18 @@ import org.junit.runners.JUnit4;
 /**
  * Tests for {@link IterableSubject} APIs, excluding those that use {@link Correspondence} (which
  * are tested in {@link IterableSubjectCorrespondenceTest}.
- *
- * @author David Saff
- * @author Christian Gruber (cgruber@israfil.net)
  */
 @RunWith(JUnit4.class)
-// "Iterable" is specific enough to establish that we're testing IterableSubject.
-@SuppressWarnings("PreferredInterfaceType")
-public class IterableSubjectTest extends BaseSubjectTestCase {
+@SuppressWarnings({
+  // "Iterable" is specific enough to establish that we're testing IterableSubject.
+  "PreferredInterfaceType",
+  // We intentionally test mismatches.
+  // TODO(cpovirk): Maybe suppress at a finer scope.
+  "TruthIncompatibleType",
+  // We intentionally test the Iterable-accepting methods in addition to the varargs methods.
+  "TruthContainsExactlyElementsInUsage",
+})
+public class IterableSubjectTest {
 
   @Test
   public void hasSize() {
@@ -55,156 +66,247 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void hasSizeFails() {
-    expectFailureWhenTestingThat(ImmutableList.of(1, 2, 3)).hasSize(4);
-    assertFailureValue("value of", "iterable.size()");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(ImmutableList.of(1, 2, 3)).hasSize(4));
+    assertFailureValue(e, "value of", "iterable.size()");
   }
 
   @Test
   public void hasSizeNegative() {
-    try {
-      assertThat(ImmutableList.of(1, 2, 3)).hasSize(-1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(ImmutableList.of(1, 2, 3)).hasSize(-1));
+    assertFailureKeys(
+        e,
+        "expected an iterable with a negative size, but that is impossible",
+        "expected size",
+        "actual size",
+        "actual contents");
+    assertFailureValue(e, "expected size", "-1");
+    assertFailureValue(e, "actual size", "3");
+    assertFailureValue(e, "actual contents", "[1, 2, 3]");
   }
 
   @Test
-  public void iterableContains() {
+  public void hasSizeOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).hasSize(1));
+    assertFailureKeys(e, "expected an iterable with size", "but was");
+  }
+
+  @Test
+  public void contains() {
     assertThat(asList(1, 2, 3)).contains(1);
   }
 
   @Test
-  public void iterableContainsWithNull() {
+  public void containsWithNull() {
     assertThat(asList(1, null, 3)).contains(null);
   }
 
   @Test
-  public void iterableContainsFailsWithSameToString() {
-    expectFailureWhenTestingThat(asList(1L, 2L, 3L, 2L)).contains(2);
+  public void containsFailsWithSameToString() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L, 3L, 2L)).contains(2));
     assertFailureKeys(
+        e,
         "expected to contain",
         "an instance of",
         "but did not",
         "though it did contain",
         "full contents");
-    assertFailureValue("expected to contain", "2");
-    assertFailureValue("an instance of", "java.lang.Integer");
-    assertFailureValue("though it did contain", "[2 [2 copies]] (java.lang.Long)");
-    assertFailureValue("full contents", "[1, 2, 3, 2]");
+    assertFailureValue(e, "expected to contain", "2");
+    assertFailureValue(e, "an instance of", "Integer");
+    assertFailureValue(e, "though it did contain", "[2 [2 copies]] (Long)");
+    assertFailureValue(e, "full contents", "[1, 2, 3, 2]");
   }
 
   @Test
-  public void iterableContainsFailsWithSameToStringAndNull() {
-    expectFailureWhenTestingThat(asList(1, "null")).contains(null);
-    assertFailureValue("an instance of", "null type");
+  public void iterableContainsFailsWithSameToStringLocalClass() {
+    class IntWrapper {
+      final int value;
+
+      IntWrapper(int value) {
+        this.value = value;
+      }
+
+      @Override
+      public boolean equals(@Nullable Object obj) {
+        return obj instanceof IntWrapper && value == ((IntWrapper) obj).value;
+      }
+
+      @Override
+      public int hashCode() {
+        return value;
+      }
+
+      @Override
+      public String toString() {
+        return String.valueOf(value);
+      }
+    }
+
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2)).contains(new IntWrapper(2)));
+    assertFailureKeys(
+        e,
+        "expected to contain",
+        "an instance of",
+        "but did not",
+        "though it did contain",
+        "full contents");
+    assertFailureValue(e, "expected to contain", "2");
+    /*
+     * We skip testing the value for "an instance of," which is something like
+     * "com.google.common.truth.IterableSubjectTest$1IntWrapper." We just want to make sure that we
+     * don't throw an exception from the lack of a canonical class name.
+     */
+    assertFailureValue(e, "though it did contain", "[2] (Integer)");
+    assertFailureValue(e, "full contents", "[1, 2]");
   }
 
   @Test
-  public void iterableContainsFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).contains(5);
-    assertFailureKeys("expected to contain", "but was");
-    assertFailureValue("expected to contain", "5");
+  public void containsFailsWithSameToStringAndNull() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, "null")).contains(null));
+    assertFailureValue(e, "an instance of", "null type");
   }
 
   @Test
-  public void iterableDoesNotContain() {
+  public void containsFailure() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).contains(5));
+    assertFailureKeys(e, "expected to contain", "but was");
+    assertFailureValue(e, "expected to contain", "5");
+  }
+
+  @Test
+  public void containsOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).contains(5));
+    assertFailureKeys(e, "expected an iterable that contains", "but was");
+  }
+
+  @Test
+  public void doesNotContain() {
     assertThat(asList(1, null, 3)).doesNotContain(5);
   }
 
   @Test
-  public void iterableDoesNotContainNull() {
+  public void doesNotContainNull() {
     assertThat(asList(1, 2, 3)).doesNotContain(null);
   }
 
   @Test
-  public void iterableDoesNotContainFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).doesNotContain(2);
-    assertFailureKeys("expected not to contain", "but was");
-    assertFailureValue("expected not to contain", "2");
+  public void doesNotContainFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).doesNotContain(2));
+    assertFailureKeys(e, "expected not to contain", "but was");
+    assertFailureValue(e, "expected not to contain", "2");
   }
 
   @Test
-  public void doesNotContainDuplicates() {
+  public void doesNotContainOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).doesNotContain(2));
+    assertFailureKeys(e, "expected an iterable that does not contain", "but was");
+  }
+
+  @Test
+  public void containsNoDuplicates() {
     assertThat(asList(1, 2, 3)).containsNoDuplicates();
   }
 
   @Test
-  public void doesNotContainDuplicatesMixedTypes() {
+  public void containsNoDuplicatesMixedTypes() {
     assertThat(asList(1, 2, 2L, 3)).containsNoDuplicates();
   }
 
   @Test
-  public void doesNotContainDuplicatesFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 2, 3)).containsNoDuplicates();
-    assertFailureKeys("expected not to contain duplicates", "but contained", "full contents");
-    assertFailureValue("but contained", "[2 x 2]");
-    assertFailureValue("full contents", "[1, 2, 2, 3]");
+  public void containsNoDuplicatesFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 2, 3)).containsNoDuplicates());
+    assertFailureKeys(e, "expected not to contain duplicates", "but contained", "full contents");
+    assertFailureValue(e, "but contained", "[2 x 2]");
+    assertFailureValue(e, "full contents", "[1, 2, 2, 3]");
   }
 
   @Test
-  public void iterableContainsAnyOf() {
+  public void containsNoDuplicatesOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).containsNoDuplicates());
+    assertFailureKeys(e, "expected an iterable that does not contain duplicates", "but was");
+  }
+
+  @Test
+  public void containsAnyOf() {
     assertThat(asList(1, 2, 3)).containsAnyOf(1, 5);
   }
 
   @Test
-  public void iterableContainsAnyOfWithNull() {
+  public void containsAnyOfWithNull() {
     assertThat(asList(1, null, 3)).containsAnyOf(null, 5);
   }
 
   @Test
-  public void iterableContainsAnyOfWithNullInThirdAndFinalPosition() {
+  public void containsAnyOfWithNullInThirdAndFinalPosition() {
     assertThat(asList(1, null, 3)).containsAnyOf(4, 5, (Integer) null);
   }
 
   @Test
-  public void iterableContainsAnyOfFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsAnyOf(5, 6, 0);
-    assertFailureKeys("expected to contain any of", "but was");
-    assertFailureValue("expected to contain any of", "[5, 6, 0]");
+  public void containsAnyOfFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).containsAnyOf(5, 6, 0));
+    assertFailureKeys(e, "expected to contain any of", "but was");
+    assertFailureValue(e, "expected to contain any of", "[5, 6, 0]");
   }
 
   @Test
-  public void iterableContainsAnyOfFailsWithSameToStringAndHomogeneousList() {
-    expectFailureWhenTestingThat(asList(1L, 2L, 3L)).containsAnyOf(2, 3);
+  public void containsAnyOfFailsWithSameToStringAndHomogeneousList() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L, 3L)).containsAnyOf(2, 3));
     assertFailureKeys(
-        "expected to contain any of", "but did not", "though it did contain", "full contents");
-    assertFailureValue("expected to contain any of", "[2, 3] (java.lang.Integer)");
-    assertFailureValue("though it did contain", "[2, 3] (java.lang.Long)");
-    assertFailureValue("full contents", "[1, 2, 3]");
+        e, "expected to contain any of", "but did not", "though it did contain", "full contents");
+    assertFailureValue(e, "expected to contain any of", "[2, 3] (Integer)");
+    assertFailureValue(e, "though it did contain", "[2, 3] (Long)");
+    assertFailureValue(e, "full contents", "[1, 2, 3]");
   }
 
   @Test
-  public void iterableContainsAnyOfFailsWithSameToStringAndHomogeneousListWithDuplicates() {
-    expectFailureWhenTestingThat(asList(3L, 3L)).containsAnyOf(2, 3, 3);
+  public void containsAnyOfFailsWithSameToStringAndHomogeneousListWithDuplicates() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(3L, 3L)).containsAnyOf(2, 3, 3));
     assertFailureKeys(
-        "expected to contain any of", "but did not", "though it did contain", "full contents");
-    assertFailureValue("expected to contain any of", "[2, 3 [2 copies]] (java.lang.Integer)");
-    assertFailureValue("though it did contain", "[3 [2 copies]] (java.lang.Long)");
-    assertFailureValue("full contents", "[3, 3]");
+        e, "expected to contain any of", "but did not", "though it did contain", "full contents");
+    assertFailureValue(e, "expected to contain any of", "[2, 3 [2 copies]] (Integer)");
+    assertFailureValue(e, "though it did contain", "[3 [2 copies]] (Long)");
+    assertFailureValue(e, "full contents", "[3, 3]");
   }
 
   @Test
-  public void iterableContainsAnyOfFailsWithSameToStringAndNullInSubject() {
-    expectFailureWhenTestingThat(asList(null, "abc")).containsAnyOf("def", "null");
+  public void containsAnyOfFailsWithSameToStringAndNullInSubject() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(null, "abc")).containsAnyOf("def", "null"));
     assertFailureKeys(
-        "expected to contain any of", "but did not", "though it did contain", "full contents");
-    assertFailureValue("expected to contain any of", "[def, null] (java.lang.String)");
-    assertFailureValue("though it did contain", "[null (null type)]");
-    assertFailureValue("full contents", "[null, abc]");
+        e, "expected to contain any of", "but did not", "though it did contain", "full contents");
+    assertFailureValue(e, "expected to contain any of", "[def, null] (String)");
+    assertFailureValue(e, "though it did contain", "[null (null type)]");
+    assertFailureValue(e, "full contents", "[null, abc]");
   }
 
   @Test
-  public void iterableContainsAnyOfFailsWithSameToStringAndNullInExpectation() {
-    expectFailureWhenTestingThat(asList("null", "abc")).containsAnyOf("def", null);
+  public void containsAnyOfFailsWithSameToStringAndNullInExpectation() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList("null", "abc")).containsAnyOf("def", null));
     assertFailureKeys(
-        "expected to contain any of", "but did not", "though it did contain", "full contents");
-    assertFailureValue("expected to contain any of", "[def (java.lang.String), null (null type)]");
-    assertFailureValue("though it did contain", "[null] (java.lang.String)");
-    assertFailureValue("full contents", "[null, abc]");
+        e, "expected to contain any of", "but did not", "though it did contain", "full contents");
+    assertFailureValue(e, "expected to contain any of", "[def (String), null (null type)]");
+    assertFailureValue(e, "though it did contain", "[null] (String)");
+    assertFailureValue(e, "full contents", "[null, abc]");
   }
 
   @Test
-  public void iterableContainsAnyOfWithOneShotIterable() {
+  public void containsAnyOfWithOneShotIterable() {
     List<Object> contents = asList(2, 1, "b");
     Iterable<Object> oneShot = new OneShotIterable<>(contents.iterator(), "OneShotIterable");
 
@@ -212,45 +314,79 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableContainsAnyInIterable() {
+  public void containsAnyOfOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).containsAnyOf(5, 6, 0));
+    assertFailureKeys(e, "expected an iterable that contains any of", "but was");
+  }
+
+  @Test
+  public void containsAnyInIterable() {
     assertThat(asList(1, 2, 3)).containsAnyIn(asList(1, 10, 100));
 
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsAnyIn(asList(5, 6, 0));
-    assertFailureKeys("expected to contain any of", "but was");
-    assertFailureValue("expected to contain any of", "[5, 6, 0]");
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsAnyIn(asList(5, 6, 0)));
+    assertFailureKeys(e, "expected to contain any of", "but was");
+    assertFailureValue(e, "expected to contain any of", "[5, 6, 0]");
   }
 
   @Test
-  public void iterableContainsAnyInArray() {
+  public void containsAnyInArray() {
     assertThat(asList(1, 2, 3)).containsAnyIn(new Integer[] {1, 10, 100});
 
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsAnyIn(new Integer[] {5, 6, 0});
-    assertFailureKeys("expected to contain any of", "but was");
-    assertFailureValue("expected to contain any of", "[5, 6, 0]");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3)).containsAnyIn(new Integer[] {5, 6, 0}));
+    assertFailureKeys(e, "expected to contain any of", "but was");
+    assertFailureValue(e, "expected to contain any of", "[5, 6, 0]");
   }
 
   @Test
-  public void iterableContainsAtLeast() {
+  public void containsAnyInWithNullExpectedIterable() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsAnyIn((Iterable<?>) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because expected iterable was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsAnyInWithNullExpectedArray() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsAnyIn((Object[]) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because expected array was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsAtLeast() {
     assertThat(asList(1, 2, 3)).containsAtLeast(1, 2);
   }
 
   @Test
-  public void iterableContainsAtLeastWithMany() {
+  public void containsAtLeastWithMany() {
     assertThat(asList(1, 2, 3)).containsAtLeast(1, 2);
   }
 
   @Test
-  public void iterableContainsAtLeastWithDuplicates() {
+  public void containsAtLeastWithDuplicates() {
     assertThat(asList(1, 2, 2, 2, 3)).containsAtLeast(2, 2);
   }
 
   @Test
-  public void iterableContainsAtLeastWithNull() {
-    assertThat(asList(1, null, 3)).containsAtLeast(3, (Integer) null);
+  public void containsAtLeastWithNull() {
+    assertThat(asList(1, null, 3)).containsAtLeast(3, null);
   }
 
   @Test
-  public void iterableContainsAtLeastWithNullAtThirdAndFinalPosition() {
+  public void containsAtLeastWithNullAtThirdAndFinalPosition() {
     assertThat(asList(1, null, 3)).containsAtLeast(1, 3, (Object) null);
   }
 
@@ -266,40 +402,48 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
    * to bite that off now. (Maybe Fact should catch exceptions from toString()?)
    */
   @Test
-  public void iterableContainsAtLeastElementsInOutOfOrderDoesNotStringify() {
+  public void containsAtLeastElementsInOutOfOrderDoesNotStringify() {
     CountsToStringCalls o = new CountsToStringCalls();
     List<Object> actual = asList(o, 1);
     List<Object> expected = asList(1, o);
     assertThat(actual).containsAtLeastElementsIn(expected);
     assertThat(o.calls).isEqualTo(0);
-    expectFailureWhenTestingThat(actual).containsAtLeastElementsIn(expected).inOrder();
+    expectFailure(
+        whenTesting -> whenTesting.that(actual).containsAtLeastElementsIn(expected).inOrder());
     assertThat(o.calls).isGreaterThan(0);
   }
 
   @Test
-  public void iterableContainsAtLeastFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsAtLeast(1, 2, 4);
-    assertFailureKeys("missing (1)", "---", "expected to contain at least", "but was");
-    assertFailureValue("missing (1)", "4");
-    assertFailureValue("expected to contain at least", "[1, 2, 4]");
+  public void containsAtLeastFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).containsAtLeast(1, 2, 4));
+    assertFailureKeys(e, "missing (1)", "---", "expected to contain at least", "but was");
+    assertFailureValue(e, "missing (1)", "4");
+    assertFailureValue(e, "expected to contain at least", "[1, 2, 4]");
   }
 
   @Test
-  public void iterableContainsAtLeastWithExtras() {
-    expectFailureWhenTestingThat(asList("y", "x")).containsAtLeast("x", "y", "z");
-    assertFailureValue("missing (1)", "z");
+  public void containsAtLeastWithExtras() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList("y", "x")).containsAtLeast("x", "y", "z"));
+    assertFailureValue(e, "missing (1)", "z");
   }
 
   @Test
-  public void iterableContainsAtLeastWithExtraCopiesOfOutOfOrder() {
-    expectFailureWhenTestingThat(asList("y", "x")).containsAtLeast("x", "y", "y");
-    assertFailureValue("missing (1)", "y");
+  public void containsAtLeastWithExtraCopiesOfOutOfOrder() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList("y", "x")).containsAtLeast("x", "y", "y"));
+    assertFailureValue(e, "missing (1)", "y");
   }
 
   @Test
-  public void iterableContainsAtLeastWithDuplicatesFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsAtLeast(1, 2, 2, 2, 3, 4);
-    assertFailureValue("missing (3)", "2 [2 copies], 4");
+  public void containsAtLeastWithDuplicatesFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsAtLeast(1, 2, 2, 2, 3, 4));
+    assertFailureValue(e, "missing (3)", "2 [2 copies], 4");
   }
 
   /*
@@ -307,61 +451,71 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
    * to be missing we only reference it once in the output message.
    */
   @Test
-  public void iterableContainsAtLeastWithDuplicateMissingElements() {
-    expectFailureWhenTestingThat(asList(1, 2)).containsAtLeast(4, 4, 4);
-    assertFailureValue("missing (3)", "4 [3 copies]");
+  public void containsAtLeastWithDuplicateMissingElements() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2)).containsAtLeast(4, 4, 4));
+    assertFailureValue(e, "missing (3)", "4 [3 copies]");
   }
 
   @Test
-  public void iterableContainsAtLeastWithNullFailure() {
-    expectFailureWhenTestingThat(asList(1, null, 3)).containsAtLeast(1, null, null, 3);
-    assertFailureValue("missing (1)", "null");
+  public void containsAtLeastWithNullFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, null, 3)).containsAtLeast(1, null, null, 3));
+    assertFailureValue(e, "missing (1)", "null");
   }
 
   @Test
-  public void iterableContainsAtLeastFailsWithSameToStringAndHomogeneousList() {
-    expectFailureWhenTestingThat(asList(1L, 2L)).containsAtLeast(1, 2);
-    assertFailureValue("missing (2)", "1, 2 (java.lang.Integer)");
-    assertFailureValue("though it did contain (2)", "1, 2 (java.lang.Long)");
+  public void containsAtLeastFailsWithSameToStringAndHomogeneousList() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L)).containsAtLeast(1, 2));
+    assertFailureValue(e, "missing (2)", "1, 2 (Integer)");
+    assertFailureValue(e, "though it did contain (2)", "1, 2 (Long)");
   }
 
   @Test
-  public void iterableContainsAtLeastFailsWithSameToStringAndHomogeneousListWithDuplicates() {
-    expectFailureWhenTestingThat(asList(1L, 2L, 2L)).containsAtLeast(1, 1, 2);
-    assertFailureValue("missing (3)", "1 [2 copies], 2 (java.lang.Integer)");
-    assertFailureValue("though it did contain (3)", "1, 2 [2 copies] (java.lang.Long)");
+  public void containsAtLeastFailsWithSameToStringAndHomogeneousListWithDuplicates() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L, 2L)).containsAtLeast(1, 1, 2));
+    assertFailureValue(e, "missing (3)", "1 [2 copies], 2 (Integer)");
+    assertFailureValue(e, "though it did contain (3)", "1, 2 [2 copies] (Long)");
   }
 
   @Test
-  public void iterableContainsAtLeastFailsWithSameToStringAndHomogeneousListWithNull() {
-    expectFailureWhenTestingThat(asList("null", "abc")).containsAtLeast("abc", null);
-    assertFailureValue("missing (1)", "null (null type)");
-    assertFailureValue("though it did contain (1)", "null (java.lang.String)");
+  public void containsAtLeastFailsWithSameToStringAndHomogeneousListWithNull() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList("null", "abc")).containsAtLeast("abc", null));
+    assertFailureValue(e, "missing (1)", "null (null type)");
+    assertFailureValue(e, "though it did contain (1)", "null (String)");
   }
 
   @Test
-  public void iterableContainsAtLeastFailsWithSameToStringAndHeterogeneousListWithDuplicates() {
-    expectFailureWhenTestingThat(asList(1, 2, 2L, 3L, 3L)).containsAtLeast(2L, 2L, 3, 3);
-    assertFailureValue("missing (3)", "2 (java.lang.Long), 3 (java.lang.Integer) [2 copies]");
-    assertFailureValue(
-        "though it did contain (3)", "2 (java.lang.Integer), 3 (java.lang.Long) [2 copies]");
+  public void containsAtLeastFailsWithSameToStringAndHeterogeneousListWithDuplicates() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 2L, 3L, 3L)).containsAtLeast(2L, 2L, 3, 3));
+    assertFailureValue(e, "missing (3)", "2 (Long), 3 (Integer) [2 copies]");
+    assertFailureValue(e, "though it did contain (3)", "2 (Integer), 3 (Long) [2 copies]");
   }
 
   @Test
-  public void iterableContainsAtLeastFailsWithEmptyString() {
-    expectFailureWhenTestingThat(asList("a", null)).containsAtLeast("", null);
+  public void containsAtLeastFailsWithEmptyString() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList("a", null)).containsAtLeast("", null));
 
-    assertFailureKeys("missing (1)", "---", "expected to contain at least", "but was");
-    assertFailureValue("missing (1)", "");
+    assertFailureKeys(e, "missing (1)", "---", "expected to contain at least", "but was");
+    assertFailureValue(e, "missing (1)", "");
   }
 
   @Test
-  public void iterableContainsAtLeastInOrder() {
+  public void containsAtLeastInOrder() {
     assertThat(asList(3, 2, 5)).containsAtLeast(3, 2, 5).inOrder();
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWithGaps() {
+  public void containsAtLeastInOrderWithGaps() {
     assertThat(asList(3, 2, 5)).containsAtLeast(3, 5).inOrder();
     assertThat(asList(3, 2, 2, 4, 5)).containsAtLeast(3, 2, 2, 5).inOrder();
     assertThat(asList(3, 1, 4, 1, 5)).containsAtLeast(3, 1, 5).inOrder();
@@ -372,37 +526,45 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWithNull() {
+  public void containsAtLeastInOrderWithNull() {
     assertThat(asList(3, null, 5)).containsAtLeast(3, null, 5).inOrder();
     assertThat(asList(3, null, 7, 5)).containsAtLeast(3, null, 5).inOrder();
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWithFailure() {
-    expectFailureWhenTestingThat(asList(1, null, 3)).containsAtLeast(null, 1, 3).inOrder();
+  public void containsAtLeastInOrderWithFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, null, 3)).containsAtLeast(null, 1, 3).inOrder());
     assertFailureKeys(
+        e,
         "required elements were all found, but order was wrong",
         "expected order for required elements",
         "but was");
-    assertFailureValue("expected order for required elements", "[null, 1, 3]");
-    assertFailureValue("but was", "[1, null, 3]");
+    assertFailureValue(e, "expected order for required elements", "[null, 1, 3]");
+    assertFailureValue(e, "but was", "[1, null, 3]");
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWithFailureWithActualOrder() {
-    expectFailureWhenTestingThat(asList(1, 2, null, 3, 4)).containsAtLeast(null, 1, 3).inOrder();
+  public void containsAtLeastInOrderWithFailureWithActualOrder() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, null, 3, 4)).containsAtLeast(null, 1, 3).inOrder());
     assertFailureKeys(
+        e,
         "required elements were all found, but order was wrong",
         "expected order for required elements",
         "but order was",
         "full contents");
-    assertFailureValue("expected order for required elements", "[null, 1, 3]");
-    assertFailureValue("but order was", "[1, null, 3]");
-    assertFailureValue("full contents", "[1, 2, null, 3, 4]");
+    assertFailureValue(e, "expected order for required elements", "[null, 1, 3]");
+    assertFailureValue(e, "but order was", "[1, null, 3]");
+    assertFailureValue(e, "full contents", "[1, 2, null, 3, 4]");
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWithOneShotIterable() {
+  public void containsAtLeastInOrderWithOneShotIterable() {
     List<Object> contents = asList(2, 1, null, 4, "a", 3, "b");
     Iterable<Object> oneShot = new OneShotIterable<>(contents.iterator(), contents.toString());
 
@@ -410,17 +572,28 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWithOneShotIterableWrongOrder() {
+  public void containsAtLeastInOrderWithOneShotIterableWrongOrder() {
     List<Object> contents = asList(2, 1, null, 4, "a", 3, "b");
     Iterable<Object> oneShot = new OneShotIterable<>(contents.iterator(), "BadIterable");
 
-    expectFailureWhenTestingThat(oneShot).containsAtLeast(1, 3, (Object) null).inOrder();
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(oneShot).containsAtLeast(1, 3, (Object) null).inOrder());
     assertFailureKeys(
+        e,
         "required elements were all found, but order was wrong",
         "expected order for required elements",
         "but was");
-    assertFailureValue("expected order for required elements", "[1, 3, null]");
-    assertFailureValue("but was", "BadIterable"); // TODO(b/231966021): Output its elements.
+    assertFailureValue(e, "expected order for required elements", "[1, 3, null]");
+    assertFailureValue(e, "but was", "BadIterable"); // TODO(b/231966021): Output its elements.
+  }
+
+  @Test
+  public void containsAtLeastOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).containsAtLeast(1, 2, 4));
+    assertFailureKeys(e, "expected an iterable that contains at least", "but was");
   }
 
   private static final class OneShotIterable<E> implements Iterable<E> {
@@ -444,96 +617,168 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableContainsAtLeastInOrderWrongOrderAndMissing() {
-    expectFailureWhenTestingThat(asList(1, 2)).containsAtLeast(2, 1, 3).inOrder();
+  public void containsAtLeastInOrderWrongOrderAndMissing() {
+    expectFailure(whenTesting -> whenTesting.that(asList(1, 2)).containsAtLeast(2, 1, 3).inOrder());
   }
 
   @Test
   @SuppressWarnings("ContainsAllElementsInWithVarArgsToContainsAtLeast")
-  public void iterableContainsAtLeastElementsInIterable() {
+  public void containsAtLeastElementsInIterable() {
     assertThat(asList(1, 2, 3)).containsAtLeastElementsIn(asList(1, 2));
 
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsAtLeastElementsIn(asList(1, 2, 4));
-    assertFailureKeys("missing (1)", "---", "expected to contain at least", "but was");
-    assertFailureValue("missing (1)", "4");
-    assertFailureValue("expected to contain at least", "[1, 2, 4]");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3)).containsAtLeastElementsIn(asList(1, 2, 4)));
+    assertFailureKeys(e, "missing (1)", "---", "expected to contain at least", "but was");
+    assertFailureValue(e, "missing (1)", "4");
+    assertFailureValue(e, "expected to contain at least", "[1, 2, 4]");
   }
 
   @Test
   @SuppressWarnings("ContainsAllElementsInWithVarArgsToContainsAtLeast")
-  public void iterableContainsAtLeastElementsInCanUseFactPerElement() {
-    expectFailureWhenTestingThat(asList("abc"))
-        .containsAtLeastElementsIn(asList("123\n456", "789"));
-    assertFailureKeys("missing (2)", "#1", "#2", "---", "expected to contain at least", "but was");
-    assertFailureValue("#1", "123\n456");
-    assertFailureValue("#2", "789");
+  public void containsAtLeastElementsInCanUseFactPerElement() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting
+                    .that(asList("abc"))
+                    .containsAtLeastElementsIn(asList("123\n456", "789")));
+    assertFailureKeys(
+        e, "missing (2)", "#1", "#2", "---", "expected to contain at least", "but was");
+    assertFailureValue(e, "#1", "123\n456");
+    assertFailureValue(e, "#2", "789");
   }
 
   @Test
-  public void iterableContainsAtLeastElementsInArray() {
+  public void containsAtLeastElementsInArray() {
     assertThat(asList(1, 2, 3)).containsAtLeastElementsIn(new Integer[] {1, 2});
 
-    expectFailureWhenTestingThat(asList(1, 2, 3))
-        .containsAtLeastElementsIn(new Integer[] {1, 2, 4});
-    assertFailureKeys("missing (1)", "---", "expected to contain at least", "but was");
-    assertFailureValue("missing (1)", "4");
-    assertFailureValue("expected to contain at least", "[1, 2, 4]");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting
+                    .that(asList(1, 2, 3))
+                    .containsAtLeastElementsIn(new Integer[] {1, 2, 4}));
+    assertFailureKeys(e, "missing (1)", "---", "expected to contain at least", "but was");
+    assertFailureValue(e, "missing (1)", "4");
+    assertFailureValue(e, "expected to contain at least", "[1, 2, 4]");
   }
 
   @Test
-  public void iterableContainsNoneOf() {
+  public void containsAtLeastElementsInIterableWithNullExpected() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3)).containsAtLeastElementsIn((Iterable<?>) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because expected iterable was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsAtLeastElementsInArrayWithNullExpected() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3)).containsAtLeastElementsIn((Object[]) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because expected array was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsNoneOf() {
     assertThat(asList(1, 2, 3)).containsNoneOf(4, 5, 6);
   }
 
   @Test
-  public void iterableContainsNoneOfFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsNoneOf(1, 2, 4);
-    assertFailureKeys("expected not to contain any of", "but contained", "full contents");
-    assertFailureValue("expected not to contain any of", "[1, 2, 4]");
-    assertFailureValue("but contained", "[1, 2]");
-    assertFailureValue("full contents", "[1, 2, 3]");
+  public void containsNoneOfFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).containsNoneOf(1, 2, 4));
+    assertFailureKeys(e, "expected not to contain any of", "but contained", "full contents");
+    assertFailureValue(e, "expected not to contain any of", "[1, 2, 4]");
+    assertFailureValue(e, "but contained", "[1, 2]");
+    assertFailureValue(e, "full contents", "[1, 2, 3]");
   }
 
   @Test
-  public void iterableContainsNoneOfFailureWithDuplicateInSubject() {
-    expectFailureWhenTestingThat(asList(1, 2, 2, 3)).containsNoneOf(1, 2, 4);
-    assertFailureValue("but contained", "[1, 2]");
+  public void containsNoneOfOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).containsNoneOf(1, 2, 4));
+    assertFailureKeys(e, "expected an iterable that does not contain any of", "but was");
   }
 
   @Test
-  public void iterableContainsNoneOfFailureWithDuplicateInExpected() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsNoneOf(1, 2, 2, 4);
-    assertFailureValue("but contained", "[1, 2]");
+  public void containsNoneOfFailureWithDuplicateInSubject() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 2, 3)).containsNoneOf(1, 2, 4));
+    assertFailureValue(e, "but contained", "[1, 2]");
   }
 
   @Test
-  public void iterableContainsNoneOfFailureWithEmptyString() {
-    expectFailureWhenTestingThat(asList("")).containsNoneOf("", null);
-    assertFailureKeys("expected not to contain any of", "but contained", "full contents");
-    assertFailureValue("expected not to contain any of", "[\"\" (empty String), null]");
-    assertFailureValue("but contained", "[\"\" (empty String)]");
-    assertFailureValue("full contents", "[]");
+  public void containsNoneOfFailureWithDuplicateInExpected() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).containsNoneOf(1, 2, 2, 4));
+    assertFailureValue(e, "but contained", "[1, 2]");
+  }
+
+  @Test
+  public void containsNoneOfFailureWithEmptyString() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList("")).containsNoneOf("", null));
+    assertFailureKeys(e, "expected not to contain any of", "but contained", "full contents");
+    assertFailureValue(e, "expected not to contain any of", "[\"\" (empty String), null]");
+    assertFailureValue(e, "but contained", "[\"\" (empty String)]");
+    assertFailureValue(e, "full contents", "[]");
   }
 
   @Test
   @SuppressWarnings("ContainsNoneInWithVarArgsToContainsNoneOf")
-  public void iterableContainsNoneInIterable() {
+  public void containsNoneInIterable() {
     assertThat(asList(1, 2, 3)).containsNoneIn(asList(4, 5, 6));
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsNoneIn(asList(1, 2, 4));
-    assertFailureKeys("expected not to contain any of", "but contained", "full contents");
-    assertFailureValue("expected not to contain any of", "[1, 2, 4]");
-    assertFailureValue("but contained", "[1, 2]");
-    assertFailureValue("full contents", "[1, 2, 3]");
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsNoneIn(asList(1, 2, 4)));
+    assertFailureKeys(e, "expected not to contain any of", "but contained", "full contents");
+    assertFailureValue(e, "expected not to contain any of", "[1, 2, 4]");
+    assertFailureValue(e, "but contained", "[1, 2]");
+    assertFailureValue(e, "full contents", "[1, 2, 3]");
   }
 
   @Test
-  public void iterableContainsNoneInArray() {
+  public void containsNoneInNullIterable() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsNoneIn((Iterable<?>) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because excluded iterable was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsNoneInNullArray() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsNoneIn((Object[]) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because excluded array was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsNoneInArray() {
     assertThat(asList(1, 2, 3)).containsNoneIn(new Integer[] {4, 5, 6});
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsNoneIn(new Integer[] {1, 2, 4});
+    expectFailure(
+        whenTesting -> whenTesting.that(asList(1, 2, 3)).containsNoneIn(new Integer[] {1, 2, 4}));
   }
 
   @Test
-  public void iterableContainsExactlyArray() {
+  public void containsExactlyArray() {
     String[] stringArray = {"a", "b"};
     ImmutableList<String[]> iterable = ImmutableList.of(stringArray);
     // This test fails w/o the explicit cast
@@ -550,122 +795,134 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableContainsExactlyWithMany() {
+  public void containsExactlyWithMany() {
     assertThat(asList(1, 2, 3)).containsExactly(1, 2, 3);
   }
 
   @Test
-  public void iterableContainsExactlyOutOfOrder() {
+  public void containsExactlyOutOfOrder() {
     assertThat(asList(1, 2, 3, 4)).containsExactly(3, 1, 4, 2);
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicates() {
+  public void containsExactlyWithDuplicates() {
     assertThat(asList(1, 2, 2, 2, 3)).containsExactly(1, 2, 2, 2, 3);
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicatesOutOfOrder() {
+  public void containsExactlyWithDuplicatesOutOfOrder() {
     assertThat(asList(1, 2, 2, 2, 3)).containsExactly(2, 1, 2, 3, 2);
   }
 
   @Test
-  public void iterableContainsExactlyWithOnlyNullPassedAsNullArray() {
-    // Truth is tolerant of this erroneous varargs call.
-    Iterable<Object> actual = asList((Object) null);
-    assertThat(actual).containsExactly((Object[]) null);
+  // We intentionally test the behavior of the method under a call that will soon fail.
+  @SuppressWarnings("NullNeedsCastForVarargs")
+  @J2ktIncompatible // Kotlin can't pass a null array for a varargs parameter
+  public void containsExactlyWithOnlyNullPassedAsNullArray() {
+    Iterable<Object> actual = singleton(null);
+    // We are changing Truth from tolerating this erroneous varargs call to not tolerating it.
+    try {
+      assertThat(actual).containsExactly((Object[]) null);
+    } catch (NullPointerException e) {
+      // OK: implementation does not accept a null array for varargs.
+    }
   }
 
   @Test
-  public void iterableContainsExactlyWithOnlyNull() {
+  public void containsExactlyWithOnlyNull() {
     Iterable<Object> actual = asList((Object) null);
     assertThat(actual).containsExactly((Object) null);
   }
 
   @Test
-  public void iterableContainsExactlyWithNullSecond() {
+  public void containsExactlyWithNullSecond() {
     assertThat(asList(1, null)).containsExactly(1, null);
   }
 
   @Test
-  public void iterableContainsExactlyWithNullThird() {
+  public void containsExactlyWithNullThird() {
     assertThat(asList(1, 2, null)).containsExactly(1, 2, null);
   }
 
   @Test
-  public void iterableContainsExactlyWithNull() {
+  public void containsExactlyWithNull() {
     assertThat(asList(1, null, 3)).containsExactly(1, null, 3);
   }
 
   @Test
-  public void iterableContainsExactlyWithNullOutOfOrder() {
-    assertThat(asList(1, null, 3)).containsExactly(1, 3, (Integer) null);
+  public void containsExactlyWithNullOutOfOrder() {
+    assertThat(asList(1, null, 3)).containsExactly(1, 3, null);
   }
 
   @Test
-  public void iterableContainsExactlyOutOfOrderDoesNotStringify() {
+  public void containsExactlyOutOfOrderDoesNotStringify() {
     CountsToStringCalls o = new CountsToStringCalls();
     List<Object> actual = asList(o, 1);
     List<Object> expected = asList(1, o);
     assertThat(actual).containsExactlyElementsIn(expected);
     assertThat(o.calls).isEqualTo(0);
-    expectFailureWhenTestingThat(actual).containsExactlyElementsIn(expected).inOrder();
+    expectFailure(
+        whenTesting -> whenTesting.that(actual).containsExactlyElementsIn(expected).inOrder());
     assertThat(o.calls).isGreaterThan(0);
   }
 
   @Test
-  public void iterableContainsExactlyWithEmptyString() {
-    expectFailureWhenTestingThat(asList()).containsExactly("");
+  public void containsExactlyWithEmptyString() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(asList()).containsExactly(""));
 
-    assertFailureValue("missing (1)", "");
+    assertFailureValue(e, "missing (1)", "");
   }
 
   @Test
-  public void iterableContainsExactlyWithEmptyStringAndUnexpectedItem() {
-    expectFailureWhenTestingThat(asList("a", null)).containsExactly("");
+  public void containsExactlyWithEmptyStringAndUnexpectedItem() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList("a", null)).containsExactly(""));
 
-    assertFailureKeys("missing (1)", "unexpected (2)", "---", "expected", "but was");
-    assertFailureValue("missing (1)", "");
-    assertFailureValue("unexpected (2)", "a, null");
+    assertFailureKeys(e, "missing (1)", "unexpected (2)", "---", "expected", "but was");
+    assertFailureValue(e, "missing (1)", "");
+    assertFailureValue(e, "unexpected (2)", "a, null");
   }
 
   @Test
-  public void iterableContainsExactlyWithEmptyStringAndMissingItem() {
-    expectFailureWhenTestingThat(asList("")).containsExactly("a", null);
+  public void containsExactlyWithEmptyStringAndMissingItem() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList("")).containsExactly("a", null));
 
-    assertFailureValue("missing (2)", "a, null");
-    assertFailureValue("unexpected (1)", "");
+    assertFailureValue(e, "missing (2)", "a, null");
+    assertFailureValue(e, "unexpected (1)", "");
   }
 
   @Test
-  public void iterableContainsExactlyWithEmptyStringAmongMissingItems() {
-    expectFailureWhenTestingThat(asList("a")).containsExactly("", "b");
+  public void containsExactlyWithEmptyStringAmongMissingItems() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList("a")).containsExactly("", "b"));
 
     assertFailureKeys(
-        "missing (2)", "#1", "#2", "", "unexpected (1)", "#1", "---", "expected", "but was");
-    assertFailureValueIndexed("#1", 0, "");
-    assertFailureValueIndexed("#2", 0, "b");
-    assertFailureValueIndexed("#1", 1, "a");
+        e, "missing (2)", "#1", "#2", "", "unexpected (1)", "#1", "---", "expected", "but was");
+    assertFailureValueIndexed(e, "#1", 0, "");
+    assertFailureValueIndexed(e, "#2", 0, "b");
+    assertFailureValueIndexed(e, "#1", 1, "a");
   }
 
   @Test
-  public void iterableContainsExactlySingleElement() {
+  public void containsExactlySingleElement() {
     assertThat(asList(1)).containsExactly(1);
 
-    expectFailureWhenTestingThat(asList(1)).containsExactly(2);
-    assertFailureKeys("value of", "expected", "but was");
-    assertFailureValue("value of", "iterable.onlyElement()");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(asList(1)).containsExactly(2));
+    assertFailureKeys(e, "value of", "expected", "but was");
+    assertFailureValue(e, "value of", "iterable.onlyElement()");
   }
 
   @Test
-  public void iterableContainsExactlySingleElementNoEqualsMagic() {
-    expectFailureWhenTestingThat(asList(1)).containsExactly(1L);
-    assertFailureValueIndexed("an instance of", 0, "java.lang.Long");
+  public void containsExactlySingleElementNoEqualsMagic() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1)).containsExactly(1L));
+    assertFailureValueIndexed(e, "an instance of", 0, "Long");
   }
 
   @Test
   @SuppressWarnings("ContainsExactlyElementsInWithVarArgsToExactly")
-  public void iterableContainsExactlyWithElementsThatThrowWhenYouCallHashCode() {
+  public void containsExactlyWithElementsThatThrowWhenYouCallHashCode() {
     HashCodeThrower one = new HashCodeThrower();
     HashCodeThrower two = new HashCodeThrower();
 
@@ -676,24 +933,31 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableContainsExactlyWithElementsThatThrowWhenYouCallHashCodeFailureTooMany() {
+  public void containsExactlyWithElementsThatThrowWhenYouCallHashCodeFailureTooMany() {
     HashCodeThrower one = new HashCodeThrower();
     HashCodeThrower two = new HashCodeThrower();
 
-    expectFailureWhenTestingThat(asList(one, two)).containsExactly(one);
+    expectFailure(whenTesting -> whenTesting.that(asList(one, two)).containsExactly(one));
   }
 
   @Test
-  public void iterableContainsExactlyWithElementsThatThrowWhenYouCallHashCodeOneMismatch() {
+  public void containsExactlyWithElementsThatThrowWhenYouCallHashCodeOneMismatch() {
     HashCodeThrower one = new HashCodeThrower();
     HashCodeThrower two = new HashCodeThrower();
 
-    expectFailureWhenTestingThat(asList(one, one)).containsExactly(one, two);
+    expectFailure(whenTesting -> whenTesting.that(asList(one, one)).containsExactly(one, two));
+  }
+
+  @Test
+  public void containsExactlyOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).containsExactly(1, 2));
+    assertFailureKeys(e, "expected an iterable that contains exactly", "but was");
   }
 
   private static class HashCodeThrower {
     @Override
-    public boolean equals(Object other) {
+    public boolean equals(@Nullable Object other) {
       return this == other;
     }
 
@@ -710,62 +974,83 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
 
   @Test
   @SuppressWarnings({"ContainsExactlyNone", "TruthSelfEquals"})
-  public void iterableContainsExactlyElementsInInOrderPassesWithEmptyExpectedAndActual() {
+  public void containsExactlyElementsInInOrderPassesWithEmptyExpectedAndActual() {
     assertThat(ImmutableList.of()).containsExactlyElementsIn(ImmutableList.of()).inOrder();
   }
 
   @Test
   @SuppressWarnings("ContainsExactlyNone")
-  public void iterableContainsExactlyElementsInWithEmptyExpected() {
-    expectFailureWhenTestingThat(asList("foo")).containsExactlyElementsIn(ImmutableList.of());
-    assertFailureKeys("expected to be empty", "but was");
+  public void containsExactlyElementsInWithEmptyExpected() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList("foo")).containsExactlyElementsIn(ImmutableList.of()));
+    assertFailureKeys(e, "expected to be empty", "but was");
   }
 
   @Test
   @SuppressWarnings("ContainsExactlyElementsInWithVarArgsToExactly")
-  public void iterableContainsExactlyElementsInErrorMessageIsInOrder() {
-    expectFailureWhenTestingThat(asList("foo OR bar"))
-        .containsExactlyElementsIn(asList("foo", "bar"));
-    assertFailureValue("missing (2)", "foo, bar");
-    assertFailureValue("unexpected (1)", "foo OR bar");
+  public void containsExactlyElementsInErrorMessageIsInOrder() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting
+                    .that(asList("foo OR bar"))
+                    .containsExactlyElementsIn(asList("foo", "bar")));
+    assertFailureValue(e, "missing (2)", "foo, bar");
+    assertFailureValue(e, "unexpected (1)", "foo OR bar");
   }
 
   @Test
-  public void iterableContainsExactlyMissingItemFailure() {
-    expectFailureWhenTestingThat(asList(1, 2)).containsExactly(1, 2, 4);
-    assertFailureValue("missing (1)", "4");
+  public void containsExactlyMissingItemFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2)).containsExactly(1, 2, 4));
+    assertFailureValue(e, "missing (1)", "4");
   }
 
   @Test
-  public void iterableContainsExactlyUnexpectedItemFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsExactly(1, 2);
-    assertFailureValue("unexpected (1)", "3");
+  public void containsExactlyUnexpectedItemFailure() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).containsExactly(1, 2));
+    assertFailureValue(e, "unexpected (1)", "3");
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicatesNotEnoughItemsFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsExactly(1, 2, 2, 2, 3);
-    assertFailureValue("missing (2)", "2 [2 copies]");
+  public void containsExactlyWithDuplicatesNotEnoughItemsFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsExactly(1, 2, 2, 2, 3));
+    assertFailureValue(e, "missing (2)", "2 [2 copies]");
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicatesMissingItemFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsExactly(1, 2, 2, 2, 3, 4);
-    assertFailureValue("missing (3)", "2 [2 copies], 4");
+  public void containsExactlyWithDuplicatesMissingItemFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3)).containsExactly(1, 2, 2, 2, 3, 4));
+    assertFailureValue(e, "missing (3)", "2 [2 copies], 4");
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicatesMissingItemsWithNewlineFailure() {
-    expectFailureWhenTestingThat(asList("a", "b", "foo\nbar"))
-        .containsExactly("a", "b", "foo\nbar", "foo\nbar", "foo\nbar");
-    assertFailureKeys("missing (2)", "#1 [2 copies]", "---", "expected", "but was");
-    assertFailureValue("#1 [2 copies]", "foo\nbar");
+  public void containsExactlyWithDuplicatesMissingItemsWithNewlineFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting
+                    .that(asList("a", "b", "foo\nbar"))
+                    .containsExactly("a", "b", "foo\nbar", "foo\nbar", "foo\nbar"));
+    assertFailureKeys(e, "missing (2)", "#1 [2 copies]", "---", "expected", "but was");
+    assertFailureValue(e, "#1 [2 copies]", "foo\nbar");
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicatesMissingAndExtraItemsWithNewlineFailure() {
-    expectFailureWhenTestingThat(asList("a\nb", "a\nb")).containsExactly("foo\nbar", "foo\nbar");
+  public void containsExactlyWithDuplicatesMissingAndExtraItemsWithNewlineFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList("a\nb", "a\nb")).containsExactly("foo\nbar", "foo\nbar"));
     assertFailureKeys(
+        e,
         "missing (2)",
         "#1 [2 copies]",
         "",
@@ -774,14 +1059,16 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
         "---",
         "expected",
         "but was");
-    assertFailureValueIndexed("#1 [2 copies]", 0, "foo\nbar");
-    assertFailureValueIndexed("#1 [2 copies]", 1, "a\nb");
+    assertFailureValueIndexed(e, "#1 [2 copies]", 0, "foo\nbar");
+    assertFailureValueIndexed(e, "#1 [2 copies]", 1, "a\nb");
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicatesUnexpectedItemFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 2, 2, 2, 3)).containsExactly(1, 2, 2, 3);
-    assertFailureValue("unexpected (2)", "2 [2 copies]");
+  public void containsExactlyWithDuplicatesUnexpectedItemFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 2, 2, 2, 3)).containsExactly(1, 2, 2, 3));
+    assertFailureValue(e, "unexpected (2)", "2 [2 copies]");
   }
 
   /*
@@ -789,101 +1076,116 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
    * to be missing we only reference it once in the output message.
    */
   @Test
-  public void iterableContainsExactlyWithDuplicateMissingElements() {
-    expectFailureWhenTestingThat(asList()).containsExactly(4, 4, 4);
-    assertFailureValue("missing (3)", "4 [3 copies]");
+  public void containsExactlyWithDuplicateMissingElements() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList()).containsExactly(4, 4, 4));
+    assertFailureValue(e, "missing (3)", "4 [3 copies]");
   }
 
   @Test
-  public void iterableContainsExactlyWithNullFailure() {
-    expectFailureWhenTestingThat(asList(1, null, 3)).containsExactly(1, null, null, 3);
-    assertFailureValue("missing (1)", "null");
+  public void containsExactlyWithNullFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, null, 3)).containsExactly(1, null, null, 3));
+    assertFailureValue(e, "missing (1)", "null");
   }
 
   @Test
-  public void iterableContainsExactlyWithMissingAndExtraElements() {
-    expectFailureWhenTestingThat(asList(1, 2, 3)).containsExactly(1, 2, 4);
-    assertFailureValue("missing (1)", "4");
-    assertFailureValue("unexpected (1)", "3");
+  public void containsExactlyWithMissingAndExtraElements() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3)).containsExactly(1, 2, 4));
+    assertFailureValue(e, "missing (1)", "4");
+    assertFailureValue(e, "unexpected (1)", "3");
   }
 
   @Test
-  public void iterableContainsExactlyWithDuplicateMissingAndExtraElements() {
-    expectFailureWhenTestingThat(asList(1, 2, 3, 3)).containsExactly(1, 2, 4, 4);
-    assertFailureValue("missing (2)", "4 [2 copies]");
-    assertFailureValue("unexpected (2)", "3 [2 copies]");
+  public void containsExactlyWithDuplicateMissingAndExtraElements() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1, 2, 3, 3)).containsExactly(1, 2, 4, 4));
+    assertFailureValue(e, "missing (2)", "4 [2 copies]");
+    assertFailureValue(e, "unexpected (2)", "3 [2 copies]");
   }
 
   @Test
-  public void iterableContainsExactlyWithCommaSeparatedVsIndividual() {
-    expectFailureWhenTestingThat(asList("a, b")).containsExactly("a", "b");
+  public void containsExactlyWithCommaSeparatedVsIndividual() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList("a, b")).containsExactly("a", "b"));
     assertFailureKeys(
-        "missing (2)", "#1", "#2", "", "unexpected (1)", "#1", "---", "expected", "but was");
-    assertFailureValueIndexed("#1", 0, "a");
-    assertFailureValueIndexed("#2", 0, "b");
-    assertFailureValueIndexed("#1", 1, "a, b");
+        e, "missing (2)", "#1", "#2", "", "unexpected (1)", "#1", "---", "expected", "but was");
+    assertFailureValueIndexed(e, "#1", 0, "a");
+    assertFailureValueIndexed(e, "#2", 0, "b");
+    assertFailureValueIndexed(e, "#1", 1, "a, b");
   }
 
   @Test
-  public void iterableContainsExactlyFailsWithSameToStringAndHomogeneousList() {
-    expectFailureWhenTestingThat(asList(1L, 2L)).containsExactly(1, 2);
-    assertFailureValue("missing (2)", "1, 2 (java.lang.Integer)");
-    assertFailureValue("unexpected (2)", "1, 2 (java.lang.Long)");
+  public void containsExactlyFailsWithSameToStringAndHomogeneousList() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L)).containsExactly(1, 2));
+    assertFailureValue(e, "missing (2)", "1, 2 (Integer)");
+    assertFailureValue(e, "unexpected (2)", "1, 2 (Long)");
   }
 
   @Test
-  public void iterableContainsExactlyFailsWithSameToStringAndListWithNull() {
-    expectFailureWhenTestingThat(asList(1L, 2L)).containsExactly(null, 1, 2);
+  public void containsExactlyFailsWithSameToStringAndListWithNull() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L)).containsExactly(null, 1, 2));
+    assertFailureValue(e, "missing (3)", "null (null type), 1 (Integer), 2 (Integer)");
+    assertFailureValue(e, "unexpected (2)", "1, 2 (Long)");
+  }
+
+  @Test
+  public void containsExactlyFailsWithSameToStringAndHeterogeneousList() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2)).containsExactly(1, null, 2L));
+    assertFailureValue(e, "missing (3)", "1 (Integer), null (null type), 2 (Long)");
+    assertFailureValue(e, "unexpected (2)", "1 (Long), 2 (Integer)");
+  }
+
+  @Test
+  public void containsExactlyFailsWithSameToStringAndHomogeneousListWithDuplicates() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1L, 2L)).containsExactly(1, 2, 2));
+    assertFailureValue(e, "missing (3)", "1, 2 [2 copies] (Integer)");
+    assertFailureValue(e, "unexpected (2)", "1, 2 (Long)");
+  }
+
+  @Test
+  public void containsExactlyFailsWithSameToStringAndHeterogeneousListWithDuplicates() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(asList(1L, 2)).containsExactly(1, null, null, 2L, 2L));
     assertFailureValue(
-        "missing (3)", "null (null type), 1 (java.lang.Integer), 2 (java.lang.Integer)");
-    assertFailureValue("unexpected (2)", "1, 2 (java.lang.Long)");
+        e, "missing (5)", "1 (Integer), null (null type) [2 copies], 2 (Long) [2 copies]");
+    assertFailureValue(e, "unexpected (2)", "1 (Long), 2 (Integer)");
   }
 
   @Test
-  public void iterableContainsExactlyFailsWithSameToStringAndHeterogeneousList() {
-    expectFailureWhenTestingThat(asList(1L, 2)).containsExactly(1, null, 2L);
-    assertFailureValue(
-        "missing (3)", "1 (java.lang.Integer), null (null type), 2 (java.lang.Long)");
-    assertFailureValue("unexpected (2)", "1 (java.lang.Long), 2 (java.lang.Integer)");
-  }
-
-  @Test
-  public void iterableContainsExactlyFailsWithSameToStringAndHomogeneousListWithDuplicates() {
-    expectFailureWhenTestingThat(asList(1L, 2L)).containsExactly(1, 2, 2);
-    assertFailureValue("missing (3)", "1, 2 [2 copies] (java.lang.Integer)");
-    assertFailureValue("unexpected (2)", "1, 2 (java.lang.Long)");
-  }
-
-  @Test
-  public void iterableContainsExactlyFailsWithSameToStringAndHeterogeneousListWithDuplicates() {
-    expectFailureWhenTestingThat(asList(1L, 2)).containsExactly(1, null, null, 2L, 2L);
-    assertFailureValue(
-        "missing (5)",
-        "1 (java.lang.Integer), null (null type) [2 copies], 2 (java.lang.Long) [2 copies]");
-    assertFailureValue("unexpected (2)", "1 (java.lang.Long), 2 (java.lang.Integer)");
-  }
-
-  @Test
-  public void iterableContainsExactlyWithOneIterableGivesWarning() {
-    expectFailureWhenTestingThat(asList(1, 2, 3, 4)).containsExactly(asList(1, 2, 3, 4));
-    assertThat(expectFailure.getFailure())
-        .hasMessageThat()
-        .contains(CONTAINS_EXACTLY_ITERABLE_WARNING);
+  public void containsExactlyWithOneIterableGivesWarning() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3, 4)).containsExactly(asList(1, 2, 3, 4)));
+    assertThat(e).hasMessageThat().contains(CONTAINS_EXACTLY_ITERABLE_WARNING);
   }
 
   @Test
   @SuppressWarnings("ContainsExactlyElementsInWithVarArgsToExactly")
-  public void iterableContainsExactlyElementsInWithOneIterableDoesNotGiveWarning() {
-    expectFailureWhenTestingThat(asList(1, 2, 3, 4)).containsExactlyElementsIn(asList(1, 2, 3));
-    assertFailureValue("unexpected (1)", "4");
+  public void containsExactlyElementsInWithOneIterableDoesNotGiveWarning() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3, 4)).containsExactlyElementsIn(asList(1, 2, 3)));
+    assertFailureValue(e, "unexpected (1)", "4");
   }
 
   @Test
-  public void iterableContainsExactlyWithTwoIterableDoesNotGivesWarning() {
-    expectFailureWhenTestingThat(asList(1, 2, 3, 4)).containsExactly(asList(1, 2), asList(3, 4));
-    assertThat(expectFailure.getFailure())
-        .hasMessageThat()
-        .doesNotContain(CONTAINS_EXACTLY_ITERABLE_WARNING);
+  public void containsExactlyWithTwoIterablesDoesNotGiveWarning() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2, 3, 4)).containsExactly(asList(1, 2), asList(3, 4)));
+    assertThat(e).hasMessageThat().doesNotContain(CONTAINS_EXACTLY_ITERABLE_WARNING);
   }
 
   private static final String CONTAINS_EXACTLY_ITERABLE_WARNING =
@@ -892,43 +1194,41 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
           + "containsExactlyElementsIn(Iterable) instead?";
 
   @Test
-  public void iterableContainsExactlyWithOneNonIterableDoesNotGiveWarning() {
-    expectFailureWhenTestingThat(asList(1, 2, 3, 4)).containsExactly(1);
-    assertFailureValue("unexpected (3)", "2, 3, 4");
+  public void containsExactlyWithOneNonIterableDoesNotGiveWarning() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 3, 4)).containsExactly(1));
+    assertFailureValue(e, "unexpected (3)", "2, 3, 4");
   }
 
   @Test
-  public void iterableContainsExactlyInOrder() {
+  public void containsExactlyInOrder() {
     assertThat(asList(3, 2, 5)).containsExactly(3, 2, 5).inOrder();
   }
 
   @Test
-  public void iterableContainsExactlyInOrderWithNull() {
+  public void containsExactlyInOrderWithNull() {
     assertThat(asList(3, null, 5)).containsExactly(3, null, 5).inOrder();
   }
 
   @Test
-  public void iterableContainsExactlyInOrderWithFailure() {
-    expectFailureWhenTestingThat(asList(1, null, 3)).containsExactly(null, 1, 3).inOrder();
-    assertFailureKeys("contents match, but order was wrong", "expected", "but was");
-    assertFailureValue("expected", "[null, 1, 3]");
+  public void containsExactlyInOrderWithFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, null, 3)).containsExactly(null, 1, 3).inOrder());
+    assertFailureKeys(e, "contents match, but order was wrong", "expected", "but was");
+    assertFailureValue(e, "expected", "[null, 1, 3]");
   }
 
   @Test
-  public void iterableContainsExactlyInOrderWithOneShotIterable() {
+  public void containsExactlyInOrderWithOneShotIterable() {
     Iterator<Object> iterator = asList((Object) 1, null, 3).iterator();
-    Iterable<Object> iterable =
-        new Iterable<Object>() {
-          @Override
-          public Iterator<Object> iterator() {
-            return iterator;
-          }
-        };
+    Iterable<Object> iterable = () -> iterator;
     assertThat(iterable).containsExactly(1, null, 3).inOrder();
   }
 
   @Test
-  public void iterableContainsExactlyInOrderWithOneShotIterableWrongOrder() {
+  public void containsExactlyInOrderWithOneShotIterableWrongOrder() {
     Iterator<Object> iterator = asList((Object) 1, null, 3).iterator();
     Iterable<Object> iterable =
         new Iterable<Object>() {
@@ -943,40 +1243,68 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
           }
         };
 
-    expectFailureWhenTestingThat(iterable).containsExactly(1, 3, null).inOrder();
-    assertFailureKeys("contents match, but order was wrong", "expected", "but was");
-    assertFailureValue("expected", "[1, 3, null]");
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(iterable).containsExactly(1, 3, null).inOrder());
+    assertFailureKeys(e, "contents match, but order was wrong", "expected", "but was");
+    assertFailureValue(e, "expected", "[1, 3, null]");
   }
 
   @Test
-  public void iterableWithNoToStringOverride() {
-    Iterable<Integer> iterable =
-        new Iterable<Integer>() {
-          @Override
-          public Iterator<Integer> iterator() {
-            return Iterators.forArray(1, 2, 3);
-          }
-        };
+  @J2ktIncompatible // TODO: b/420703524 - Detect the Kotlin/Native default toString() output
+  public void withNoToStringOverride() {
+    Iterable<Integer> iterable = () -> Iterators.forArray(1, 2, 3);
 
-    expectFailureWhenTestingThat(iterable).containsExactly(1, 2).inOrder();
-    assertFailureValue("but was", "[1, 2, 3]");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(iterable).containsExactly(1, 2).inOrder());
+    assertFailureValue(e, "but was", "[1, 2, 3]");
   }
 
   @Test
   @SuppressWarnings("ContainsExactlyElementsInWithVarArgsToExactly")
-  public void iterableContainsExactlyElementsInIterable() {
+  public void containsExactlyElementsInIterable() {
     assertThat(asList(1, 2)).containsExactlyElementsIn(asList(1, 2));
 
-    expectFailureWhenTestingThat(asList(1, 2)).containsExactlyElementsIn(asList(1, 2, 4));
-    assertFailureValue("missing (1)", "4");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2)).containsExactlyElementsIn(asList(1, 2, 4)));
+    assertFailureValue(e, "missing (1)", "4");
   }
 
   @Test
-  public void iterableContainsExactlyElementsInArray() {
+  public void containsExactlyElementsInArray() {
     assertThat(asList(1, 2)).containsExactlyElementsIn(new Integer[] {1, 2});
 
-    expectFailureWhenTestingThat(asList(1, 2)).containsExactlyElementsIn(new Integer[] {1, 2, 4});
-    assertFailureValue("missing (1)", "4");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2)).containsExactlyElementsIn(new Integer[] {1, 2, 4}));
+    assertFailureValue(e, "missing (1)", "4");
+  }
+
+  @Test
+  public void containsExactlyElementsInNullIterable() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2)).containsExactlyElementsIn((Iterable<?>) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because expected iterable was null",
+        "actual contents");
+  }
+
+  @Test
+  public void containsExactlyElementsInNullArray() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList(1, 2)).containsExactlyElementsIn((Object[]) null));
+    assertFailureKeys(
+        e,
+        "could not perform containment check because expected array was null",
+        "actual contents");
   }
 
   @Test
@@ -985,21 +1313,25 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
     assertThat((Iterable<?>) null).isEqualTo(null);
   }
 
+  @SuppressWarnings("UndefinedEquals") // It's well-defined when one value is null.
   @Test
   public void nullEqualToSomething() {
-    expectFailureWhenTestingThat(null).isEqualTo(ImmutableList.of());
+    expectFailure(
+        whenTesting -> whenTesting.that((Iterable<?>) null).isEqualTo(ImmutableList.of()));
   }
 
   @Test
   public void somethingEqualToNull() {
-    expectFailureWhenTestingThat(ImmutableList.of()).isEqualTo(null);
+    expectFailure(whenTesting -> whenTesting.that(ImmutableList.of()).isEqualTo(null));
   }
 
   @Test
   public void somethingEqualToSomething() {
-    expectFailureWhenTestingThat(ImmutableList.of()).isEqualTo(ImmutableList.of("a"));
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that(ImmutableList.of()).isEqualTo(ImmutableList.of("a")));
     // isEqualTo uses the containsExactly style of message:
-    assertFailureValue("missing (1)", "a");
+    assertFailureValue(e, "missing (1)", "a");
   }
 
   @Test
@@ -1022,34 +1354,47 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
     actual.add("one");
     expected.add("ONE");
     actual.add("two");
-    expectFailureWhenTestingThat(actual).isEqualTo(expected);
+    expectFailure(whenTesting -> whenTesting.that(actual).isEqualTo(expected));
     // The exact message generated is unspecified.
   }
 
   @Test
-  public void iterableIsEmpty() {
+  public void isEmpty() {
     assertThat(asList()).isEmpty();
   }
 
   @Test
-  public void iterableIsEmptyWithFailure() {
-    expectFailureWhenTestingThat(asList(1, null, 3)).isEmpty();
-    assertFailureKeys("expected to be empty", "but was");
+  public void isEmptyWithFailure() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(asList(1, null, 3)).isEmpty());
+    assertFailureKeys(e, "expected to be empty", "but was");
   }
 
   @Test
-  public void iterableIsNotEmpty() {
+  public void isEmptyOnNullIterable() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).isEmpty());
+    assertFailureKeys(e, "expected an empty iterable", "but was");
+  }
+
+  @Test
+  public void isNotEmpty() {
     assertThat(asList("foo")).isNotEmpty();
   }
 
   @Test
-  public void iterableIsNotEmptyWithFailure() {
-    expectFailureWhenTestingThat(asList()).isNotEmpty();
-    assertFailureKeys("expected not to be empty");
+  public void isNotEmptyWithFailure() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(asList()).isNotEmpty());
+    assertFailureKeys(e, "expected not to be empty");
   }
 
   @Test
-  public void iterableIsInStrictOrder() {
+  public void isNotEmptyOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).isNotEmpty());
+    assertFailureKeys(e, "expected a nonempty iterable", "but was");
+  }
+
+  @Test
+  public void isInStrictOrder() {
     assertThat(asList()).isInStrictOrder();
     assertThat(asList(1)).isInStrictOrder();
     assertThat(asList(1, 2, 3, 4)).isInStrictOrder();
@@ -1057,25 +1402,25 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void isInStrictOrderFailure() {
-    expectFailureWhenTestingThat(asList(1, 2, 2, 4)).isInStrictOrder();
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 2, 2, 4)).isInStrictOrder());
     assertFailureKeys(
-        "expected to be in strict order", "but contained", "followed by", "full contents");
-    assertFailureValue("but contained", "2");
-    assertFailureValue("followed by", "2");
-    assertFailureValue("full contents", "[1, 2, 2, 4]");
+        e, "expected to be in strict order", "but contained", "followed by", "full contents");
+    assertFailureValue(e, "but contained", "2");
+    assertFailureValue(e, "followed by", "2");
+    assertFailureValue(e, "full contents", "[1, 2, 2, 4]");
   }
 
   @Test
+  @J2ktIncompatible // KT-68165
   public void isInStrictOrderWithNonComparableElementsFailure() {
-    try {
-      assertThat(asList((Object) 1, "2", 3, "4")).isInStrictOrder();
-      fail("Should have thrown.");
-    } catch (ClassCastException expected) {
-    }
+    assertThrows(
+        ClassCastException.class,
+        () -> assertThat(asList((Object) 1, "2", 3, "4")).isInStrictOrder());
   }
 
   @Test
-  public void iterableIsInOrder() {
+  public void isInOrder() {
     assertThat(asList()).isInOrder();
     assertThat(asList(1)).isInOrder();
     assertThat(asList(1, 1, 2, 3, 3, 3, 4)).isInOrder();
@@ -1083,29 +1428,44 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void isInOrderFailure() {
-    expectFailureWhenTestingThat(asList(1, 3, 2, 4)).isInOrder();
-    assertFailureKeys("expected to be in order", "but contained", "followed by", "full contents");
-    assertFailureValue("but contained", "3");
-    assertFailureValue("followed by", "2");
-    assertFailureValue("full contents", "[1, 3, 2, 4]");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 3, 2, 4)).isInOrder());
+    assertFailureKeys(
+        e, "expected to be in order", "but contained", "followed by", "full contents");
+    assertFailureValue(e, "but contained", "3");
+    assertFailureValue(e, "followed by", "2");
+    assertFailureValue(e, "full contents", "[1, 3, 2, 4]");
   }
 
   @Test
   public void isInOrderMultipleFailures() {
-    expectFailureWhenTestingThat(asList(1, 3, 2, 4, 0)).isInOrder();
+    expectFailure(whenTesting -> whenTesting.that(asList(1, 3, 2, 4, 0)).isInOrder());
   }
 
   @Test
+  @J2ktIncompatible // KT-68165
   public void isInOrderWithNonComparableElementsFailure() {
-    try {
-      assertThat(asList((Object) 1, "2", 2, "3")).isInOrder();
-      fail("Should have thrown.");
-    } catch (ClassCastException expected) {
-    }
+    assertThrows(
+        ClassCastException.class, () -> assertThat(asList((Object) 1, "2", 2, "3")).isInOrder());
   }
 
   @Test
-  public void iterableIsInStrictOrderWithComparator() {
+  public void isInOrderOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).isInOrder());
+    assertFailureKeys(e, "expected an iterable that is in order", "but was");
+  }
+
+  @Test
+  public void isInOrderWithNullComparator() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 3, 2, 4)).isInOrder(null));
+    assertFailureKeys(
+        e, "could not perform ordering check because comparator was null", "actual contents");
+  }
+
+  @Test
+  public void isInStrictOrderWithComparator() {
     Iterable<String> emptyStrings = asList();
     assertThat(emptyStrings).isInStrictOrder(COMPARE_AS_DECIMAL);
     assertThat(asList("1")).isInStrictOrder(COMPARE_AS_DECIMAL);
@@ -1114,17 +1474,20 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableIsInStrictOrderWithComparatorFailure() {
-    expectFailureWhenTestingThat(asList("1", "2", "2", "10")).isInStrictOrder(COMPARE_AS_DECIMAL);
+  public void isInStrictOrderWithComparatorFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList("1", "2", "2", "10")).isInStrictOrder(COMPARE_AS_DECIMAL));
     assertFailureKeys(
-        "expected to be in strict order", "but contained", "followed by", "full contents");
-    assertFailureValue("but contained", "2");
-    assertFailureValue("followed by", "2");
-    assertFailureValue("full contents", "[1, 2, 2, 10]");
+        e, "expected to be in strict order", "but contained", "followed by", "full contents");
+    assertFailureValue(e, "but contained", "2");
+    assertFailureValue(e, "followed by", "2");
+    assertFailureValue(e, "full contents", "[1, 2, 2, 10]");
   }
 
   @Test
-  public void iterableIsInOrderWithComparator() {
+  public void isInOrderWithComparator() {
     Iterable<String> emptyStrings = asList();
     assertThat(emptyStrings).isInOrder(COMPARE_AS_DECIMAL);
     assertThat(asList("1")).isInOrder(COMPARE_AS_DECIMAL);
@@ -1132,12 +1495,31 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void iterableIsInOrderWithComparatorFailure() {
-    expectFailureWhenTestingThat(asList("1", "10", "2", "20")).isInOrder(COMPARE_AS_DECIMAL);
-    assertFailureKeys("expected to be in order", "but contained", "followed by", "full contents");
-    assertFailureValue("but contained", "10");
-    assertFailureValue("followed by", "2");
-    assertFailureValue("full contents", "[1, 10, 2, 20]");
+  public void isInOrderWithComparatorFailure() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that(asList("1", "10", "2", "20")).isInOrder(COMPARE_AS_DECIMAL));
+    assertFailureKeys(
+        e, "expected to be in order", "but contained", "followed by", "full contents");
+    assertFailureValue(e, "but contained", "10");
+    assertFailureValue(e, "followed by", "2");
+    assertFailureValue(e, "full contents", "[1, 10, 2, 20]");
+  }
+
+  @Test
+  public void isInStrictOrderOnNullIterable() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Iterable<?>) null).isInStrictOrder());
+    assertFailureKeys(e, "expected an iterable that is in strict order", "but was");
+  }
+
+  @Test
+  public void isInStrictOrderWithNullComparator() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(asList(1, 3, 2, 4)).isInStrictOrder(null));
+    assertFailureKeys(
+        e, "could not perform ordering check because comparator was null", "actual contents");
   }
 
   @SuppressWarnings("CompareProperty") // avoiding Java 8 API under Android
@@ -1174,7 +1556,7 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
   private static final Comparator<Foo> FOO_COMPARATOR = (a, b) -> Integer.compare(a.x, b.x);
 
   @Test
-  public void iterableOrderedByBaseClassComparator() {
+  public void orderedByBaseClassComparator() {
     Iterable<Bar> targetList = asList(new Bar(1), new Bar(2), new Bar(3));
     assertThat(targetList).isInOrder(FOO_COMPARATOR);
     assertThat(targetList).isInStrictOrder(FOO_COMPARATOR);
@@ -1197,14 +1579,26 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
 
     assertThat(actual).isNotIn(ImmutableList.of(ImmutableList.of("b"), ImmutableList.of("c")));
 
-    expectFailureWhenTestingThat(actual).isNotIn(ImmutableList.of("a", "b"));
-    assertThat(expectFailure.getFailure())
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isNotIn(ImmutableList.of("a", "b")));
+    assertThat(e)
         .hasMessageThat()
-        .isEqualTo(
+        .startsWith(
             "The actual value is an Iterable, and you've written a test that compares it to some "
                 + "objects that are not Iterables. Did you instead mean to check whether its "
                 + "*contents* match any of the *contents* of the given values? If so, call "
-                + "containsNoneOf(...)/containsNoneIn(...) instead. Non-iterables: [a, b]");
+                + "containsNoneOf(...)/containsNoneIn(...) instead.");
+    assertThat(e).factValue("non-iterables").isEqualTo("[a, b]");
+  }
+
+  @Test
+  @SuppressWarnings("deprecation") // test of a mistaken call
+  public void isNotInNullIterable() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(asList(1, 2)).isNotIn(null));
+    assertFailureKeys(
+        e,
+        "could not perform equality check because iterable of elements to compare to was null",
+        "value to compare was");
   }
 
   @Test
@@ -1223,14 +1617,15 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
 
     assertThat(actual).isNoneOf(ImmutableList.of("b"), ImmutableList.of("c"));
 
-    expectFailureWhenTestingThat(actual).isNoneOf("a", "b");
-    assertThat(expectFailure.getFailure())
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(actual).isNoneOf("a", "b"));
+    assertThat(e)
         .hasMessageThat()
-        .isEqualTo(
+        .startsWith(
             "The actual value is an Iterable, and you've written a test that compares it to some "
                 + "objects that are not Iterables. Did you instead mean to check whether its "
                 + "*contents* match any of the *contents* of the given values? If so, call "
-                + "containsNoneOf(...)/containsNoneIn(...) instead. Non-iterables: [a, b]");
+                + "containsNoneOf(...)/containsNoneIn(...) instead.");
+    assertThat(e).factValue("non-iterables").isEqualTo("[a, b]");
   }
 
   private static final class CountsToStringCalls {
@@ -1241,9 +1636,5 @@ public class IterableSubjectTest extends BaseSubjectTestCase {
       calls++;
       return super.toString();
     }
-  }
-
-  private IterableSubject expectFailureWhenTestingThat(Iterable<?> actual) {
-    return expectFailure.whenTesting().that(actual);
   }
 }

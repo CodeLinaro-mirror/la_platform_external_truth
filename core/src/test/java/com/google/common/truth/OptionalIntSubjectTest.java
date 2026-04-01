@@ -16,7 +16,7 @@
 package com.google.common.truth;
 
 import static com.google.common.truth.ExpectFailure.assertThat;
-import static com.google.common.truth.OptionalIntSubject.optionalInts;
+import static com.google.common.truth.ExpectFailure.expectFailure;
 import static com.google.common.truth.Truth.assertThat;
 
 import java.util.OptionalInt;
@@ -24,18 +24,14 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for Java 8 {@link OptionalInt} Subjects.
- *
- * @author Ben Douglass
- */
+/** Tests for {@link OptionalIntSubject}. */
 @RunWith(JUnit4.class)
 public class OptionalIntSubjectTest {
 
   @Test
   public void failOnNullSubject() {
-    AssertionError expected = expectFailure(whenTesting -> whenTesting.that(null).isEmpty());
-    assertThat(expected).factKeys().containsExactly("expected empty optional", "but was").inOrder();
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((OptionalInt) null).isEmpty());
+    assertThat(e).factKeys().containsExactly("expected empty optional", "but was").inOrder();
   }
 
   @Test
@@ -45,9 +41,9 @@ public class OptionalIntSubjectTest {
 
   @Test
   public void isPresentFailing() {
-    AssertionError expected =
+    AssertionError e =
         expectFailure(whenTesting -> whenTesting.that(OptionalInt.empty()).isPresent());
-    assertThat(expected).factKeys().containsExactly("expected to be present");
+    assertThat(e).factKeys().containsExactly("expected to be present");
   }
 
   @Test
@@ -57,16 +53,16 @@ public class OptionalIntSubjectTest {
 
   @Test
   public void isEmptyFailing() {
-    AssertionError expected =
+    AssertionError e =
         expectFailure(whenTesting -> whenTesting.that(OptionalInt.of(1337)).isEmpty());
-    assertThat(expected).factKeys().contains("expected to be empty");
-    assertThat(expected).factValue("but was present with value").isEqualTo("1337");
+    assertThat(e).factKeys().contains("expected to be empty");
+    assertThat(e).factValue("but was present with value").isEqualTo("1337");
   }
 
   @Test
   public void isEmptyFailingNull() {
-    AssertionError expected = expectFailure(whenTesting -> whenTesting.that(null).isEmpty());
-    assertThat(expected).factKeys().containsExactly("expected empty optional", "but was").inOrder();
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((OptionalInt) null).isEmpty());
+    assertThat(e).factKeys().containsExactly("expected empty optional", "but was").inOrder();
   }
 
   @Test
@@ -75,26 +71,17 @@ public class OptionalIntSubjectTest {
   }
 
   @Test
-  public void hasValue_FailingWithEmpty() {
-    AssertionError expected =
+  public void hasValue_failingWithEmpty() {
+    AssertionError e =
         expectFailure(whenTesting -> whenTesting.that(OptionalInt.empty()).hasValue(1337));
-    assertThat(expected)
-        .factKeys()
-        .containsExactly("expected to have value", "but was absent")
-        .inOrder();
-    assertThat(expected).factValue("expected to have value").isEqualTo("1337");
+    assertThat(e).factKeys().containsExactly("expected to have value", "but was absent").inOrder();
+    assertThat(e).factValue("expected to have value").isEqualTo("1337");
   }
 
   @Test
-  public void hasValue_FailingWithWrongValue() {
-    AssertionError expected =
+  public void hasValue_failingWithWrongValue() {
+    AssertionError e =
         expectFailure(whenTesting -> whenTesting.that(OptionalInt.of(1337)).hasValue(42));
-    assertThat(expected).factValue("value of").isEqualTo("optionalInt.getAsInt()");
-  }
-
-  private static AssertionError expectFailure(
-      ExpectFailure.SimpleSubjectBuilderCallback<OptionalIntSubject, OptionalInt>
-          assertionCallback) {
-    return ExpectFailure.expectFailureAbout(optionalInts(), assertionCallback);
+    assertThat(e).factValue("value of").isEqualTo("optionalInt.getAsInt()");
   }
 }

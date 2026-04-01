@@ -18,6 +18,7 @@ package com.google.common.truth.extensions.proto;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.truth.extensions.proto.FieldScopeUtil.join;
+import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Function;
@@ -88,7 +89,6 @@ abstract class FluentEqualityConfig implements FieldScopeLogicContainer<FluentEq
   abstract FieldScopeLogicMap<Correspondence<Number, Number>> doubleCorrespondenceMap();
 
   abstract FieldScopeLogicMap<Correspondence<Number, Number>> floatCorrespondenceMap();
-
 
   abstract boolean compareExpectedFieldsOnly();
 
@@ -372,28 +372,12 @@ abstract class FluentEqualityConfig implements FieldScopeLogicContainer<FluentEq
       Optional<Descriptor> optDescriptor) {
     checkState(hasExpectedMessages(), "withExpectedMessages() not called");
     return Correspondence.from(
-            // If we were allowed lambdas, this would be:
-            // (M a, M e) ->
-            //     ProtoTruth.assertThat(a).usingConfig(FluentEqualityConfig.this).testIsEqualTo(e),
-            new Correspondence.BinaryPredicate<M, M>() {
-              @Override
-              public boolean apply(@Nullable M actual, @Nullable M expected) {
-                return ProtoTruth.assertThat(actual)
-                    .usingConfig(FluentEqualityConfig.this)
-                    .testIsEqualTo(expected);
-              }
-            },
+            (@Nullable M actual, @Nullable M expected) ->
+                assertThat(actual).usingConfig(FluentEqualityConfig.this).testIsEqualTo(expected),
             "is equivalent according to assertThat(proto)"
                 + usingCorrespondenceString(optDescriptor)
                 + ".isEqualTo(target) to")
-        .formattingDiffsUsing(
-            // If we were allowed method references, this would be this::formatDiff.
-            new Correspondence.DiffFormatter<M, M>() {
-              @Override
-              public String formatDiff(@Nullable M actual, @Nullable M expected) {
-                return FluentEqualityConfig.this.formatDiff(actual, expected);
-              }
-            });
+        .formattingDiffsUsing(this::formatDiff);
   }
 
   private <M extends Message> String formatDiff(@Nullable M actual, @Nullable M expected) {
@@ -425,7 +409,6 @@ abstract class FluentEqualityConfig implements FieldScopeLogicContainer<FluentEq
 
     abstract Builder setFloatCorrespondenceMap(
         FieldScopeLogicMap<Correspondence<Number, Number>> floatCorrespondenceMap);
-
 
     abstract Builder setCompareExpectedFieldsOnly(boolean compare);
 
