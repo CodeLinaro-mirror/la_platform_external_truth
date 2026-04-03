@@ -17,18 +17,19 @@ package com.google.common.truth.extensions.proto;
 
 import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnknownFieldSet;
 import com.google.protobuf.UnknownFieldSet.Field;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import org.junit.Test;
@@ -69,7 +70,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testUnequalMessages() {
+  public void unequalMessages() {
     Message message = parse("o_int: 3 r_string: \"foo\"");
     Message diffMessage = parse("o_int: 5 r_string: \"bar\"");
 
@@ -77,7 +78,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFieldScopes_all() {
+  public void fieldScopes_all() {
     Message message = parse("o_int: 3 r_string: \"foo\"");
     Message diffMessage = parse("o_int: 5 r_string: \"bar\"");
 
@@ -94,7 +95,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFieldScopes_none() {
+  public void fieldScopes_none() {
     Message message = parse("o_int: 3 r_string: \"foo\"");
     Message diffMessage = parse("o_int: 5 r_string: \"bar\"");
 
@@ -111,7 +112,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFieldScopes_none_withAnyField() {
+  public void fieldScopes_none_withAnyField() {
     String typeUrl =
         isProto3()
             ? "type.googleapis.com/com.google.common.truth.extensions.proto.SubTestMessage3"
@@ -133,7 +134,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelField_ignoringField() {
+  public void ignoringTopLevelField_ignoringField() {
     expectThat(ignoringFieldDiffMessage)
         .ignoringFields(goodFieldNumber)
         .isNotEqualTo(ignoringFieldMessage);
@@ -157,7 +158,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelAnyField_ignoringField() {
+  public void ignoringTopLevelAnyField_ignoringField() {
     String typeUrl =
         isProto3()
             ? "type.googleapis.com/com.google.common.truth.extensions.proto.SubTestMessage3"
@@ -183,7 +184,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelField_fieldScopes_ignoringFields() {
+  public void ignoringTopLevelField_fieldScopes_ignoringFields() {
     expectThat(ignoringFieldDiffMessage)
         .withPartialScope(FieldScopes.ignoringFields(goodFieldNumber))
         .isNotEqualTo(ignoringFieldMessage);
@@ -199,7 +200,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelField_fieldScopes_allowingFields() {
+  public void ignoringTopLevelField_fieldScopes_allowingFields() {
     expectThat(ignoringFieldDiffMessage)
         .withPartialScope(FieldScopes.allowingFields(goodFieldNumber))
         .isEqualTo(ignoringFieldMessage);
@@ -215,7 +216,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelAnyField_fieldScopes_allowingFields() {
+  public void ignoringTopLevelAnyField_fieldScopes_allowingFields() {
     String typeUrl =
         isProto3()
             ? "type.googleapis.com/com.google.common.truth.extensions.proto.SubTestMessage3"
@@ -231,7 +232,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelField_fieldScopes_allowingFieldDescriptors() {
+  public void ignoringTopLevelField_fieldScopes_allowingFieldDescriptors() {
     expectThat(ignoringFieldDiffMessage)
         .withPartialScope(FieldScopes.allowingFieldDescriptors(goodFieldDescriptor))
         .isEqualTo(ignoringFieldMessage);
@@ -247,7 +248,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringTopLevelField_fieldScopes_ignoringFieldDescriptors() {
+  public void ignoringTopLevelField_fieldScopes_ignoringFieldDescriptors() {
     expectThat(ignoringFieldDiffMessage)
         .withPartialScope(FieldScopes.ignoringFieldDescriptors(goodFieldDescriptor))
         .isNotEqualTo(ignoringFieldMessage);
@@ -263,7 +264,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testEmptySubMessage() {
+  public void emptySubMessage() {
     Message message = parse("o_int: 1 o_sub_test_message: { }");
     Message eqMessage = parse("o_int: 2 o_sub_test_message: { }");
     Message diffMessage = parse("o_int: 3");
@@ -284,7 +285,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoreSubMessageField() {
+  public void ignoreSubMessageField() {
     Message message = parse("o_int: 1 o_sub_test_message: { o_int: 2 }");
     Message diffMessage = parse("o_int: 2 o_sub_test_message: { o_int: 2 }");
     Message eqMessage1 = parse("o_int: 1");
@@ -307,7 +308,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoreFieldOfSubMessage() {
+  public void ignoreFieldOfSubMessage() {
     // Ignore o_int of sub message fields.
     Message message = parse("o_int: 1 o_sub_test_message: { o_int: 2 r_string: \"foo\" }");
     Message diffMessage1 = parse("o_int: 2 o_sub_test_message: { o_int: 2 r_string: \"foo\" }");
@@ -334,7 +335,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringFieldOfAnyMessage() throws Exception {
+  public void ignoringFieldOfAnyMessage() throws Exception {
     String typeUrl =
         isProto3()
             ? "type.googleapis.com/com.google.common.truth.extensions.proto.SubTestMessage3"
@@ -385,7 +386,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testAnyMessageComparingExpectedFieldsOnly() throws Exception {
+  public void anyMessageComparingExpectedFieldsOnly() {
 
     String typeUrl =
         isProto3()
@@ -409,7 +410,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testInvalidAnyMessageComparingExpectedFieldsOnly() throws Exception {
+  public void invalidAnyMessageComparingExpectedFieldsOnly() {
 
     Message message = parse("o_any_message { type_url: 'invalid-type' value: 'abc123' }");
     Message eqMessage = parse("o_any_message { type_url: 'invalid-type' value: 'abc123' }");
@@ -426,7 +427,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testDifferentAnyMessagesComparingExpectedFieldsOnly() throws Exception {
+  public void differentAnyMessagesComparingExpectedFieldsOnly() {
 
     // 'o_int' and 'o_float' have the same field numbers in both messages. However, to compare
     // accurately, we incorporate the unpacked Descriptor type into the FieldNumberTree as well to
@@ -475,7 +476,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIgnoringAllButOneFieldOfSubMessage() {
+  public void ignoringAllButOneFieldOfSubMessage() {
     // Consider all of TestMessage, but none of o_sub_test_message, except
     // o_sub_test_message.o_int.
     Message message =
@@ -530,7 +531,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFromSetFields() {
+  public void fromSetFields() {
     Message scopeMessage =
         parse(
             "o_int: 1 r_string: \"x\" o_test_message: { o_int: 1 } "
@@ -598,8 +599,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFromSetFields_comparingExpectedFieldsOnly()
-      throws InvalidProtocolBufferException {
+  public void fromSetFields_comparingExpectedFieldsOnly() throws InvalidProtocolBufferException {
 
     Message message1 = parse("o_int: 1 o_double: 333 oneof_message1: { o_int: 3 o_double: 333 }");
     Message message2 =
@@ -628,7 +628,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFromSetFields_unknownFields() throws InvalidProtocolBufferException {
+  public void fromSetFields_unknownFields() throws InvalidProtocolBufferException {
     // Make sure that merging of repeated fields, separation by tag number, and separation by
     // unknown field type all work.
     Message scopeMessage =
@@ -783,7 +783,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFieldNumbersAreRecursive() {
+  public void fieldNumbersAreRecursive() {
     // o_int is compared, r_string is not.
     Message message =
         parse("o_int: 1 r_string: \"foo\" r_test_message: { o_int: 2 r_string: \"bar\" }");
@@ -824,7 +824,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testMultipleFieldNumbers() {
+  public void multipleFieldNumbers() {
     Message message = parse("o_int: 1 r_string: \"x\" o_enum: TWO");
     Message diffMessage = parse("o_int: 2 r_string: \"y\" o_enum: TWO");
     Message eqMessage =
@@ -848,34 +848,30 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testInvalidFieldNumber() {
+  public void invalidFieldNumber() {
     Message message1 = parse("o_int: 44");
     Message message2 = parse("o_int: 33");
 
-    try {
-      assertThat(message1).ignoringFields(999).isEqualTo(message2);
-      fail("Expected failure.");
-    } catch (Exception expected) {
-      // TODO(user): Use hasTransitiveCauseThat() if/when it becomes available.
-
-      Throwable cause = expected;
-      while (cause != null) {
-        if (cause
-            .getMessage()
-            .contains("Message type " + fullMessageName() + " has no field with number 999.")) {
-          break;
-        } else {
-          cause = cause.getCause();
-        }
+    Exception expected =
+        assertThrows(
+            Exception.class, () -> assertThat(message1).ignoringFields(999).isEqualTo(message2));
+    Throwable cause = expected;
+    while (cause != null) {
+      if (cause
+          .getMessage()
+          .contains("Message type " + fullMessageName() + " has no field with number 999.")) {
+        break;
+      } else {
+        cause = cause.getCause();
       }
-      if (cause == null) {
-        fail("No cause with field number error message.");
-      }
+    }
+    if (cause == null) {
+      fail("No cause with field number error message.");
     }
   }
 
   @Test
-  public void testIgnoreFieldsAtDifferentLevels() {
+  public void ignoreFieldsAtDifferentLevels() {
     // Ignore all 'o_int' fields, in different ways.
     Message message =
         parse(
@@ -945,7 +941,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFromSetFields_skipNulls() {
+  public void fromSetFields_skipNulls() {
     Message message1 = parse("o_int: 1 r_string: \"foo\" r_string: \"bar\"");
     Message eqMessage1 = parse("o_int: 1 r_string: \"foo\" r_string: \"bar\"");
     Message eqIgnoredMessage1 = parse("o_int: 2 r_string: \"foo\" r_string: \"bar\"");
@@ -953,7 +949,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
     Message eqMessage2 = parse("o_int: 3 r_string: \"baz\" r_string: \"qux\"");
     Message eqIgnoredMessage2 = parse("o_int: 4 r_string: \"baz\" r_string: \"qux\"");
 
-    List<Message> messages = Lists.newArrayList();
+    List<Message> messages = new ArrayList<>();
     Message nullMessage = null;
     messages.add(parse("o_int: -1"));
     messages.add(nullMessage);
@@ -998,13 +994,13 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFromSetFields_iterables_vacuousIfEmptyOrAllNull() {
+  public void fromSetFields_iterables_vacuousIfEmptyOrAllNull() {
     Message message1 = parse("o_int: 1 r_string: \"foo\" r_string: \"bar\"");
     Message eqIgnoredMessage1 = parse("o_int: 2 r_string: \"foo\" r_string: \"bar\"");
     Message message2 = parse("o_int: 3 r_string: \"baz\" r_string: \"qux\"");
     Message eqIgnoredMessage2 = parse("o_int: 4 r_string: \"baz\" r_string: \"qux\"");
 
-    List<Message> messages = Lists.newArrayList();
+    List<Message> messages = new ArrayList<>();
     messages.add(null);
     messages.add(null);
 
@@ -1028,29 +1024,29 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testFromSetFields_iterables_errorForDifferentMessageTypes() {
+  public void fromSetFields_iterables_errorForDifferentMessageTypes() {
     // Don't run this test twice.
     if (!testIsRunOnce()) {
       return;
     }
 
-    try {
-      FieldScopes.fromSetFields(
-          TestMessage2.newBuilder().setOInt(2).build(),
-          TestMessage3.newBuilder().setOInt(2).build());
-      fail("Expected failure.");
-    } catch (RuntimeException expected) {
-      expect
-          .that(expected)
-          .hasMessageThat()
-          .contains("Cannot create scope from messages with different descriptors");
-      expect.that(expected).hasMessageThat().contains(TestMessage2.getDescriptor().getFullName());
-      expect.that(expected).hasMessageThat().contains(TestMessage3.getDescriptor().getFullName());
-    }
+    RuntimeException expected =
+        assertThrows(
+            RuntimeException.class,
+            () ->
+                FieldScopes.fromSetFields(
+                    TestMessage2.newBuilder().setOInt(2).build(),
+                    TestMessage3.newBuilder().setOInt(2).build()));
+    expect
+        .that(expected)
+        .hasMessageThat()
+        .contains("Cannot create scope from messages with different descriptors");
+    expect.that(expected).hasMessageThat().contains(TestMessage2.getDescriptor().getFullName());
+    expect.that(expected).hasMessageThat().contains(TestMessage3.getDescriptor().getFullName());
   }
 
   @Test
-  public void testFromSetFields_iterables_errorIfDescriptorMismatchesSubject() {
+  public void fromSetFields_iterables_errorIfDescriptorMismatchesSubject() {
     // Don't run this test twice.
     if (!testIsRunOnce()) {
       return;
@@ -1061,28 +1057,28 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
     Message eqMessage =
         TestMessage2.newBuilder().setOInt(1).addRString("foo").addRString("bar").build();
 
-    try {
-      assertThat(message)
-          .withPartialScope(
-              FieldScopes.fromSetFields(
-                  TestMessage3.newBuilder().setOInt(2).build(),
-                  TestMessage3.newBuilder().addRString("foo").build()))
-          .isEqualTo(eqMessage);
-      fail("Expected failure.");
-    } catch (RuntimeException expected) {
-      expect
-          .that(expected)
-          .hasMessageThat()
-          .contains(
-              "Message given to FieldScopes.fromSetFields() "
-                  + "does not have the same descriptor as the message being tested");
-      expect.that(expected).hasMessageThat().contains(TestMessage2.getDescriptor().getFullName());
-      expect.that(expected).hasMessageThat().contains(TestMessage3.getDescriptor().getFullName());
-    }
+    RuntimeException expected =
+        assertThrows(
+            RuntimeException.class,
+            () ->
+                assertThat(message)
+                    .withPartialScope(
+                        FieldScopes.fromSetFields(
+                            TestMessage3.newBuilder().setOInt(2).build(),
+                            TestMessage3.newBuilder().addRString("foo").build()))
+                    .isEqualTo(eqMessage));
+    expect
+        .that(expected)
+        .hasMessageThat()
+        .contains(
+            "Message given to FieldScopes.fromSetFields() "
+                + "does not have the same descriptor as the message being tested");
+    expect.that(expected).hasMessageThat().contains(TestMessage2.getDescriptor().getFullName());
+    expect.that(expected).hasMessageThat().contains(TestMessage3.getDescriptor().getFullName());
   }
 
   @Test
-  public void testFromSetFields_iterables_unionsElements() {
+  public void fromSetFields_iterables_unionsElements() {
     Message message = parse("o_int: 1 r_string: \"foo\" r_string: \"bar\"");
     Message diffMessage1 = parse("o_int: 2 r_string: \"foo\" r_string: \"bar\"");
     Message diffMessage2 = parse("o_int: 4 r_string: \"baz\" r_string: \"qux\"");
@@ -1099,7 +1095,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIterableFieldScopeMethodVariants_protoSubject() {
+  public void iterableFieldScopeMethodVariants_protoSubject() {
     Message message = parse("o_int: 1 r_string: \"foo\"");
     Message eqExceptInt = parse("o_int: 2 r_string: \"foo\"");
 
@@ -1131,7 +1127,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIterableFieldScopeMethodVariants_iterableOfProtosSubject() {
+  public void iterableFieldScopeMethodVariants_iterableOfProtosSubject() {
     ImmutableList<Message> messages = listOf(parse("o_int: 1 r_string: \"foo\""));
     ImmutableList<Message> eqExceptInt = listOf(parse("o_int: 2 r_string: \"foo\""));
 
@@ -1152,7 +1148,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIterableFieldScopeMethodVariants_mapWithProtoValuesSubject() {
+  public void iterableFieldScopeMethodVariants_mapWithProtoValuesSubject() {
     ImmutableMap<String, Message> messages =
         ImmutableMap.of("foo", parse("o_int: 1 r_string: \"foo\""));
     ImmutableMap<String, Message> eqExceptInt =
@@ -1175,7 +1171,7 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
   }
 
   @Test
-  public void testIterableFieldScopeMethodVariants_multimapWithProtoValuesSubject() {
+  public void iterableFieldScopeMethodVariants_multimapWithProtoValuesSubject() {
     ImmutableMultimap<String, Message> messages =
         ImmutableMultimap.of("foo", parse("o_int: 1 r_string: \"foo\""));
     ImmutableMultimap<String, Message> eqExceptInt =
@@ -1195,5 +1191,14 @@ public class FieldScopesTest extends ProtoSubjectTestBase {
         .reportingMismatchesOnlyForValues()
         .ignoringFieldDescriptorsForValues(listOf(getFieldDescriptor("o_int")))
         .containsExactlyEntriesIn(eqExceptInt);
+  }
+
+  @Test
+  public void testFieldScopeToString_isTextFormat() {
+    Message message = parse("o_int: 3 r_string: \"foo\"");
+    FieldScope fieldScope = FieldScopes.fromSetFields(message);
+    expect.that(fieldScope.toString()).contains("FieldScopes.fromSetFields(o_int: 3");
+    FieldScope fieldScopeFromList = FieldScopes.fromSetFields(ImmutableList.of(message));
+    expect.that(fieldScopeFromList.toString()).contains("FieldScopes.fromSetFields(o_int: 3");
   }
 }

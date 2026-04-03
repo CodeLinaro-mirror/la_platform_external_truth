@@ -22,13 +22,14 @@ import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.extensions.proto.FieldScopeUtil.asList;
 
-import com.google.common.base.Objects;
 import com.google.common.truth.FailureMetadata;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.ExtensionRegistry;
 import com.google.protobuf.Message;
+import com.google.protobuf.ProtobufToStringOutput;
 import com.google.protobuf.TypeRegistry;
 import java.util.Arrays;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -634,7 +635,7 @@ public class ProtoSubject extends LiteProtoSubject {
           fact("but was", actual),
           fact("with descriptor", actual.getDescriptorForType()));
     } else if (notMessagesWithSameDescriptor(actual, expected)) {
-      super.isEqualTo(expected);
+      ProtobufToStringOutput.callWithTextFormat(() -> super.isEqualTo(expected));
     } else {
       DiffResult diffResult =
           makeDifferencer((Message) expected).diffMessages(actual, (Message) expected);
@@ -661,6 +662,13 @@ public class ProtoSubject extends LiteProtoSubject {
                     + diffResult.printToString(config.reportMismatchesOnly())));
       }
     }
+  }
+
+  @Override
+  public void isEqualToDefaultInstance() {
+    // Some tests assert things about the string representation of the proto, so we make sure that
+    // stable text format is used here.
+    ProtobufToStringOutput.callWithTextFormat(() -> super.isEqualToDefaultInstance());
   }
 
   @Override
@@ -895,7 +903,7 @@ public class ProtoSubject extends LiteProtoSubject {
      */
     boolean testIsEqualTo(@Nullable Message expected) {
       if (notMessagesWithSameDescriptor(protoSubject.actual, expected)) {
-        return Objects.equal(protoSubject.actual, expected);
+        return Objects.equals(protoSubject.actual, expected);
       } else {
         return protoSubject
             .makeDifferencer(expected)

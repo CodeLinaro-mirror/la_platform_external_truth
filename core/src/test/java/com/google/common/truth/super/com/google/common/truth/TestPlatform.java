@@ -20,4 +20,14 @@ final class TestPlatform {
   static boolean isGwt() {
     return true;
   }
+
+  static boolean isAndroid() {
+    return false;
+  }
+
+  static void assertIsComparisonFailureIfAvailable(Throwable t) {}
+
+  static void assertIsNotComparisonFailureIfAvailable(Throwable t) {}
+
+  private TestPlatform() {}
 }

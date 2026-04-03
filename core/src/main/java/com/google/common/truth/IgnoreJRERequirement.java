@@ -17,13 +17,12 @@
 package com.google.common.truth;
 
 import static java.lang.annotation.ElementType.CONSTRUCTOR;
+import static java.lang.annotation.ElementType.FIELD;
 import static java.lang.annotation.ElementType.METHOD;
 import static java.lang.annotation.ElementType.TYPE;
 
 import java.lang.annotation.Target;
 
-/**
- * Disables Animal Sniffer's checking of compatibility with older versions of Java/Android.
- */
-@Target({METHOD, CONSTRUCTOR, TYPE})
+/** Disables Animal Sniffer's checking of compatibility with older versions of Java/Android. */
+@Target({METHOD, CONSTRUCTOR, TYPE, FIELD})
 @interface IgnoreJRERequirement {}

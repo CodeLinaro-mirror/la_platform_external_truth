@@ -16,12 +16,15 @@
 package com.google.common.truth;
 
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.Math.abs;
+import static java.util.Objects.requireNonNull;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.primitives.Ints;
+import com.google.common.truth.Correspondence.DiffFormatter;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
@@ -32,21 +35,25 @@ final class TestCorrespondences {
    * integer. Parsing is as specified by {@link Integer#decode(String)}. It considers null to
    * correspond to null only.
    */
-  static final Correspondence<String, Integer> STRING_PARSES_TO_INTEGER_CORRESPONDENCE =
-      Correspondence.from(TestCorrespondences::stringParsesToInteger, "parses to");
+  static final Correspondence<@Nullable String, @Nullable Integer>
+      STRING_PARSES_TO_INTEGER_CORRESPONDENCE =
+          Correspondence.from(TestCorrespondences::stringParsesToInteger, "parses to");
 
   private static boolean stringParsesToInteger(
       @Nullable String actual, @Nullable Integer expected) {
     if (actual == null) {
       return expected == null;
     }
+    // These checks can fail under Kotlin/Native, which doesn't catch the problem earlier: KT-68165.
+    //noinspection ConstantConditions
+    if (actual.getClass() != String.class) {
+      throw new ClassCastException("not a String: " + actual.getClass());
+    }
+    //noinspection ConstantConditions
+    if (expected != null && expected.getClass() != Integer.class) {
+      throw new ClassCastException("not an Integer: " + expected.getClass());
+    }
     try {
-      // Older versions of Android reject leading plus signs, per the pre-Java-7 contract:
-      // https://docs.oracle.com/javase/6/docs/api/java/lang/Integer.html#decode(java.lang.String)
-      // https://docs.oracle.com/javase/7/docs/api/java/lang/Integer.html#decode(java.lang.String)
-      if (actual.startsWith("+")) {
-        actual = actual.substring(1);
-      }
       return Integer.decode(actual).equals(expected);
     } catch (NumberFormatException e) {
       return false;
@@ -54,21 +61,21 @@ final class TestCorrespondences {
   }
 
   /** A formatter for the diffs between integers. */
-  static final Correspondence.DiffFormatter<Integer, Integer> INT_DIFF_FORMATTER =
-      (a, e) -> Integer.toString(a - e);
+  static final DiffFormatter<@Nullable Integer, @Nullable Integer> INT_DIFF_FORMATTER =
+      (a, e) -> Integer.toString(requireNonNull(a) - requireNonNull(e));
 
   /**
    * A correspondence between integers which tests whether they are within 10 of each other. Smart
    * diffing is enabled, with a formatted diff showing the actual value less the expected value.
    * Does not support null values.
    */
-  static final Correspondence<Integer, Integer> WITHIN_10_OF =
+  static final Correspondence<@Nullable Integer, @Nullable Integer> WITHIN_10_OF =
       Correspondence.from(
-              (Integer actual, Integer expected) -> {
+              (@Nullable Integer actual, @Nullable Integer expected) -> {
                 if (actual == null || expected == null) {
                   throw new NullPointerExceptionFromWithin10Of();
                 }
-                return Math.abs(actual - expected) <= 10;
+                return abs(actual - expected) <= 10;
               },
               "is within 10 of")
           .formattingDiffsUsing(INT_DIFF_FORMATTER);
@@ -80,7 +87,8 @@ final class TestCorrespondences {
    * expected elements, but throws {@link NullPointerException} on null actual elements.
    */
   static final Correspondence<String, String> CASE_INSENSITIVE_EQUALITY =
-      Correspondence.from(String::equalsIgnoreCase, "equals (ignoring case)");
+      Correspondence.from(
+          (a, e) -> requireNonNull(a).equalsIgnoreCase(e), "equals (ignoring case)");
 
   /**
    * A correspondence between strings which tests for case-insensitive equality, with a broken
@@ -97,12 +105,13 @@ final class TestCorrespondences {
    * behavior documented below.
    */
   @SuppressWarnings("Casing_StringEqualsIgnoreCase")
-  private static boolean equalsIgnoreCaseHalfNullSafe(String actual, String expected) {
+  private static boolean equalsIgnoreCaseHalfNullSafe(
+      @Nullable String actual, @Nullable String expected) {
     if (actual == null && expected == null) {
       return true;
     }
     // Oops! We don't handle the case where actual == null but expected != null.
-    return actual.equalsIgnoreCase(expected);
+    return requireNonNull(actual).equalsIgnoreCase(expected);
   }
 
   /**
@@ -178,7 +187,7 @@ final class TestCorrespondences {
       if (parts.size() != 2) {
         return null;
       }
-      Integer id = parts.get(0).equals("none") ? -1 : Ints.tryParse(parts.get(0));
+      Integer id = parts.get(0).equals("none") ? Integer.valueOf(-1) : Ints.tryParse(parts.get(0));
       Integer score = Ints.tryParse(parts.get(1));
       if (id == null || score == null) {
         return null;
@@ -204,7 +213,7 @@ final class TestCorrespondences {
    * A formatter for diffs between records. If the records have the same key, it gives a string of
    * the form {@code "score:<score_diff>"}. If they have different keys, it gives null.
    */
-  static final Correspondence.DiffFormatter<MyRecord, MyRecord> RECORD_DIFF_FORMATTER =
+  static final DiffFormatter<MyRecord, MyRecord> RECORD_DIFF_FORMATTER =
       TestCorrespondences::formatRecordDiff;
 
   /**
@@ -216,7 +225,7 @@ final class TestCorrespondences {
    * <p>The {@link Correspondence#compare} implementation support nulls, such that null corresponds
    * to null only. The {@link Correspondence#formatDiff} implementation does not support nulls.
    */
-  static final Correspondence<MyRecord, MyRecord> RECORDS_EQUAL_WITH_SCORE_TOLERANCE_10 =
+  static final Correspondence<MyRecord, @Nullable MyRecord> RECORDS_EQUAL_WITH_SCORE_TOLERANCE_10 =
       RECORDS_EQUAL_WITH_SCORE_TOLERANCE_10_NO_DIFF.formattingDiffsUsing(RECORD_DIFF_FORMATTER);
 
   /**
@@ -245,7 +254,7 @@ final class TestCorrespondences {
     if (expected == null) {
       return false;
     }
-    return actual.hasSameId(expected) && Math.abs(actual.getScore() - expected.getScore()) <= 10;
+    return actual.hasSameId(expected) && abs(actual.getScore() - expected.getScore()) <= 10;
   }
 
   private static @Nullable String formatRecordDiff(MyRecord actual, MyRecord expected) {
@@ -260,14 +269,14 @@ final class TestCorrespondences {
    * A key function for {@link MyRecord} instances that keys records by their {@code id} values. The
    * key is null if the record has no {@code id}. Does not support null records.
    */
-  static final Function<MyRecord, Integer> RECORD_ID =
+  static final Function<MyRecord, @Nullable Integer> RECORD_ID =
       record -> record.hasId() ? record.getId() : null;
 
   /**
    * A key function for {@link MyRecord} instances that keys records by their {@code id} values. The
    * key is null if the record has no {@code id}. Does not support null records.
    */
-  static final Function<MyRecord, Integer> NULL_SAFE_RECORD_ID =
+  static final Function<@Nullable MyRecord, Integer> NULL_SAFE_RECORD_ID =
       record -> {
         if (record == null) {
           return 0;
@@ -280,7 +289,7 @@ final class TestCorrespondences {
    * instances and keys records by their {@code id} values. The key is null if the string does not
    * parse or the record has no {@code id}. Does not support null strings.
    */
-  static final Function<String, Integer> PARSED_RECORD_ID =
+  static final Function<String, @Nullable Integer> PARSED_RECORD_ID =
       str -> {
         MyRecord record = MyRecord.parse(str);
         return record != null ? RECORD_ID.apply(record) : null;

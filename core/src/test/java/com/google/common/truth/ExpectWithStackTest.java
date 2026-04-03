@@ -17,7 +17,9 @@ package com.google.common.truth;
 
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static org.junit.Assert.assertThrows;
 
+import org.jspecify.annotations.Nullable;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestRule;
@@ -26,6 +28,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 import org.junit.runners.model.Statement;
 
+/** Stack-trace tests for {@link Expect}. */
 @RunWith(JUnit4.class)
 public class ExpectWithStackTest {
   private final Expect expectWithTrace = Expect.create();
@@ -33,14 +36,11 @@ public class ExpectWithStackTest {
   @Rule public final TestRuleVerifier verifyAssertionError = new TestRuleVerifier(expectWithTrace);
 
   @Test
-  public void testExpectTrace_simpleCase() {
+  public void expectTrace_simpleCase() {
     verifyAssertionError.setErrorVerifier(
-        new ErrorVerifier() {
-          @Override
-          public void verify(AssertionError expected) {
-            assertThat(expected.getStackTrace()).hasLength(0);
-            assertThat(expected).hasMessageThat().startsWith("3 expectations failed:");
-          }
+        expected -> {
+          assertThat(expected.getStackTrace()).hasLength(0);
+          assertThat(expected).hasMessageThat().startsWith("3 expectations failed:");
         });
 
     expectWithTrace.that(true).isFalse();
@@ -49,17 +49,14 @@ public class ExpectWithStackTest {
   }
 
   @Test
-  public void testExpectTrace_loop() {
+  public void expectTrace_loop() {
     verifyAssertionError.setErrorVerifier(
-        new ErrorVerifier() {
-          @Override
-          public void verify(AssertionError expected) {
-            assertThat(expected.getStackTrace()).hasLength(0);
-            assertThat(expected).hasMessageThat().startsWith("4 expectations failed:");
-            assertWithMessage("test method name should only show up once with following omitted")
-                .that(expected.getMessage().split("testExpectTrace_loop"))
-                .hasLength(2);
-          }
+        expected -> {
+          assertThat(expected.getStackTrace()).hasLength(0);
+          assertThat(expected).hasMessageThat().startsWith("4 expectations failed:");
+          assertWithMessage("test method name should only show up once with following omitted")
+              .that(expected.getMessage().split("expectTrace_loop"))
+              .hasLength(2);
         });
 
     for (int i = 0; i < 4; i++) {
@@ -68,14 +65,11 @@ public class ExpectWithStackTest {
   }
 
   @Test
-  public void testExpectTrace_callerException() {
+  public void expectTrace_callerException() {
     verifyAssertionError.setErrorVerifier(
-        new ErrorVerifier() {
-          @Override
-          public void verify(AssertionError expected) {
-            assertThat(expected.getStackTrace()).hasLength(0);
-            assertThat(expected).hasMessageThat().startsWith("2 expectations failed:");
-          }
+        expected -> {
+          assertThat(expected.getStackTrace()).hasLength(0);
+          assertThat(expected).hasMessageThat().startsWith("2 expectations failed:");
         });
 
     expectWithTrace.that(true).isFalse();
@@ -85,16 +79,12 @@ public class ExpectWithStackTest {
   }
 
   @Test
-  public void testExpectTrace_onlyCallerException() {
+  public void expectTrace_onlyCallerException() {
     verifyAssertionError.setErrorVerifier(
-        new ErrorVerifier() {
-          @Override
-          public void verify(AssertionError expected) {
+        expected ->
             assertWithMessage("Should throw exception as it is if only caller exception")
                 .that(expected.getStackTrace().length)
-                .isAtLeast(2);
-          }
-        });
+                .isAtLeast(2));
 
     expectWithTrace
         .that(alwaysFailWithCause(getFirstException("First", getSecondException("Second", null))))
@@ -105,7 +95,7 @@ public class ExpectWithStackTest {
     throw new AssertionError("Always fail", throwable);
   }
 
-  private static Exception getFirstException(String message, Throwable cause) {
+  private static Exception getFirstException(String message, @Nullable Throwable cause) {
     if (cause != null) {
       return new RuntimeException(message, cause);
     } else {
@@ -113,7 +103,7 @@ public class ExpectWithStackTest {
     }
   }
 
-  private static Exception getSecondException(String message, Throwable cause) {
+  private static Exception getSecondException(String message, @Nullable Throwable cause) {
     if (cause != null) {
       return new RuntimeException(message, cause);
     } else {
@@ -138,11 +128,10 @@ public class ExpectWithStackTest {
       return new Statement() {
         @Override
         public void evaluate() throws Throwable {
-          try {
-            ruleToVerify.apply(base, description).evaluate();
-          } catch (AssertionError caught) {
-            errorVerifier.verify(caught);
-          }
+          AssertionError e =
+              assertThrows(
+                  AssertionError.class, () -> ruleToVerify.apply(base, description).evaluate());
+          errorVerifier.verify(e);
         }
       };
     }

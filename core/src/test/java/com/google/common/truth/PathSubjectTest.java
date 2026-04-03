@@ -15,21 +15,18 @@
  */
 package com.google.common.truth;
 
-import org.junit.After;
-import org.junit.Before;
+import static com.google.common.truth.Truth.assertThat;
 
-public abstract class PlatformBaseSubjectTestCase {
+import java.nio.file.Paths;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-  final ExpectFailure expectFailure = new ExpectFailure();
-
-  @Before
-  public void setupExpectFailure() {
-    expectFailure.enterRuleContext(); // safe since @After forces leaving the context
-  }
-
-  @After
-  public void ensureExpectedFailureCaught() {
-    expectFailure.leaveRuleContext();
-    expectFailure.ensureFailureCaught();
+/** Tests for {@link PathSubject}. */
+@RunWith(JUnit4.class)
+public class PathSubjectTest {
+  @Test
+  public void basicEquality() {
+    assertThat(Paths.get("foo")).isEqualTo(Paths.get("foo"));
   }
 }

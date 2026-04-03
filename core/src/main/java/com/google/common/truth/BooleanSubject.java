@@ -19,20 +19,16 @@ import static com.google.common.truth.Fact.simpleFact;
 
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for boolean subjects.
- *
- * @author Christian Gruber (cgruber@israfil.net)
- */
+/** A subject for {@link Boolean} values. */
 public final class BooleanSubject extends Subject {
   private final @Nullable Boolean actual;
 
-  BooleanSubject(FailureMetadata metadata, @Nullable Boolean actual) {
+  private BooleanSubject(FailureMetadata metadata, @Nullable Boolean actual) {
     super(metadata, actual);
     this.actual = actual;
   }
 
-  /** Fails if the subject is false or {@code null}. */
+  /** Checks that the actual value is {@code true}. */
   public void isTrue() {
     if (actual == null) {
       isEqualTo(true); // fails
@@ -41,12 +37,16 @@ public final class BooleanSubject extends Subject {
     }
   }
 
-  /** Fails if the subject is true or {@code null}. */
+  /** Checks that the actual value is {@code false}. */
   public void isFalse() {
     if (actual == null) {
       isEqualTo(false); // fails
     } else if (actual) {
       failWithoutActual(simpleFact("expected to be false"));
     }
+  }
+
+  static Factory<BooleanSubject, Boolean> booleans() {
+    return BooleanSubject::new;
   }
 }
