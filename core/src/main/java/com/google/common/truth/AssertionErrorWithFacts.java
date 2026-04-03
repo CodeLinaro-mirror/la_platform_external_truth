@@ -19,6 +19,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.truth.Fact.makeMessage;
 
 import com.google.common.collect.ImmutableList;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -27,12 +28,31 @@ import org.jspecify.annotations.Nullable;
  */
 @SuppressWarnings("OverrideThrowableToString") // We intentionally hide the class name.
 final class AssertionErrorWithFacts extends AssertionError implements ErrorWithFacts {
-  private final ImmutableList<Fact> facts;
+  private final List<Fact> facts;
 
-  AssertionErrorWithFacts(
-      ImmutableList<String> messages, ImmutableList<Fact> facts, @Nullable Throwable cause) {
+  private AssertionErrorWithFacts(
+      List<String> messages, List<Fact> facts, @Nullable Throwable cause) {
     super(makeMessage(messages, facts), cause);
     this.facts = checkNotNull(facts);
+  }
+
+  static AssertionErrorWithFacts create(
+      List<String> messages, List<Fact> facts, @Nullable Throwable cause) {
+    return new AssertionErrorWithFacts(messages, facts, cause);
+  }
+
+  static AssertionError createWithoutFacts(String message, @Nullable Throwable cause) {
+    return create(ImmutableList.of(message), ImmutableList.of(), cause);
+  }
+
+  static AssertionError createWithoutFactsOrStack(String message, @Nullable Throwable cause) {
+    AssertionError error = createWithoutFacts(message, cause);
+    error.setStackTrace(new StackTraceElement[0]);
+    return error;
+  }
+
+  static AssertionError createWithoutFactsOrStack(String message) {
+    return createWithoutFactsOrStack(message, /* cause= */ null);
   }
 
   @Override
@@ -41,7 +61,7 @@ final class AssertionErrorWithFacts extends AssertionError implements ErrorWithF
   }
 
   @Override
-  public ImmutableList<Fact> facts() {
+  public List<Fact> facts() {
     return facts;
   }
 }

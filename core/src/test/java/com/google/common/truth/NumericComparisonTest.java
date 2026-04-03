@@ -15,6 +15,8 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.FailureAssertions.assertFailureValue;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.collect.ImmutableSet;
@@ -22,22 +24,16 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for comparisons between various integral types.
- *
- * @author David Saff
- * @author Christian Gruber
- * @author Kurt Alfred Kluever
- */
+/** Tests for comparisons between various integral types. */
 @RunWith(JUnit4.class)
-public class NumericComparisonTest extends BaseSubjectTestCase {
+@SuppressWarnings("SelfAssertion")
+public class NumericComparisonTest {
 
-  @SuppressWarnings("TruthSelfEquals")
   @Test
-  public void testPrimitivesVsBoxedPrimitivesVsObject_int() {
+  public void primitivesVsBoxedPrimitivesVsObject_int() {
     int int42 = 42;
     Integer integer42 = 42;
-    Object object42 = (Object) 42;
+    Object object42 = 42;
 
     assertThat(int42).isEqualTo(int42);
     assertThat(integer42).isEqualTo(int42);
@@ -52,12 +48,11 @@ public class NumericComparisonTest extends BaseSubjectTestCase {
     assertThat(object42).isEqualTo(object42);
   }
 
-  @SuppressWarnings("TruthSelfEquals")
   @Test
-  public void testPrimitivesVsBoxedPrimitivesVsObject_long() {
+  public void primitivesVsBoxedPrimitivesVsObject_long() {
     long longPrim42 = 42;
     Long long42 = (long) 42;
-    Object object42 = (Object) 42L;
+    Object object42 = 42L;
 
     assertThat(longPrim42).isEqualTo(longPrim42);
     assertThat(long42).isEqualTo(longPrim42);
@@ -73,8 +68,7 @@ public class NumericComparisonTest extends BaseSubjectTestCase {
   }
 
   @Test
-  @SuppressWarnings("TruthSelfEquals")
-  public void testAllCombinations_pass() {
+  public void allCombinations_pass() {
     assertThat(42).isEqualTo(42L);
     assertThat(42).isEqualTo(Long.valueOf(42L));
     assertThat(Integer.valueOf(42)).isEqualTo(42L);
@@ -95,80 +89,51 @@ public class NumericComparisonTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void testNumericTypeWithSameValue_shouldBeEqual_int_long() {
-    expectFailureWhenTestingThat(42).isNotEqualTo(42L);
+  public void numericTypeWithSameValue_shouldBeEqual_int_long() {
+    expectFailure(whenTesting -> whenTesting.that(42).isNotEqualTo(42L));
   }
 
   @Test
-  public void testNumericTypeWithSameValue_shouldBeEqual_int_int() {
-    expectFailureWhenTestingThat(42).isNotEqualTo(42);
+  public void numericTypeWithSameValue_shouldBeEqual_int_int() {
+    expectFailure(whenTesting -> whenTesting.that(42).isNotEqualTo(42));
   }
 
   @Test
-  public void testNumericPrimitiveTypes_isNotEqual_shouldFail_intToChar() {
-    expectFailureWhenTestingThat(42).isNotEqualTo((char) 42);
+  public void numericPrimitiveTypes_isNotEqual_shouldFail_intToChar() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(42).isNotEqualTo((char) 42));
     // 42 in ASCII is '*'
-    assertFailureValue("expected not to be", "*");
-    assertFailureValue("but was; string representation of actual value", "42");
+    assertFailureValue(e, "expected not to be", "*");
+    assertFailureValue(e, "but was; string representation of actual value", "42");
   }
 
   @Test
-  public void testNumericPrimitiveTypes_isNotEqual_shouldFail_charToInt() {
+  public void numericPrimitiveTypes_isNotEqual_shouldFail_charToInt() {
     // Uses Object overload rather than Integer.
-    expectFailure.whenTesting().that((char) 42).isNotEqualTo(42);
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((char) 42).isNotEqualTo(42));
     // 42 in ASCII is '*'
-    assertFailureValue("expected not to be", "42");
-    assertFailureValue("but was; string representation of actual value", "*");
-  }
-
-  private static final Subject.Factory<Subject, Object> DEFAULT_SUBJECT_FACTORY =
-      new Subject.Factory<Subject, Object>() {
-        @Override
-        public Subject createSubject(FailureMetadata metadata, Object that) {
-          return new Subject(metadata, that);
-        }
-      };
-
-  private static void expectFailure(
-      ExpectFailure.SimpleSubjectBuilderCallback<Subject, Object> callback) {
-    AssertionError unused = ExpectFailure.expectFailureAbout(DEFAULT_SUBJECT_FACTORY, callback);
+    assertFailureValue(e, "expected not to be", "42");
+    assertFailureValue(e, "but was; string representation of actual value", "*");
   }
 
   @Test
-  public void testNumericPrimitiveTypes() {
+  public void numericPrimitiveTypes() {
     byte byte42 = (byte) 42;
     short short42 = (short) 42;
     char char42 = (char) 42;
     int int42 = 42;
-    long long42 = (long) 42;
+    long long42 = 42;
 
-    ImmutableSet<Object> fortyTwos =
-        ImmutableSet.<Object>of(byte42, short42, char42, int42, long42);
+    ImmutableSet<Object> fortyTwos = ImmutableSet.of(byte42, short42, char42, int42, long42);
     for (Object actual : fortyTwos) {
       for (Object expected : fortyTwos) {
         assertThat(actual).isEqualTo(expected);
       }
     }
 
-    ImmutableSet<Object> fortyTwosNoChar = ImmutableSet.<Object>of(byte42, short42, int42, long42);
+    ImmutableSet<Object> fortyTwosNoChar = ImmutableSet.of(byte42, short42, int42, long42);
     for (Object actual : fortyTwosNoChar) {
       for (Object expected : fortyTwosNoChar) {
-        ExpectFailure.SimpleSubjectBuilderCallback<Subject, Object> actualFirst =
-            new ExpectFailure.SimpleSubjectBuilderCallback<Subject, Object>() {
-              @Override
-              public void invokeAssertion(SimpleSubjectBuilder<Subject, Object> expect) {
-                expect.that(actual).isNotEqualTo(expected);
-              }
-            };
-        ExpectFailure.SimpleSubjectBuilderCallback<Subject, Object> expectedFirst =
-            new ExpectFailure.SimpleSubjectBuilderCallback<Subject, Object>() {
-              @Override
-              public void invokeAssertion(SimpleSubjectBuilder<Subject, Object> expect) {
-                expect.that(expected).isNotEqualTo(actual);
-              }
-            };
-        expectFailure(actualFirst);
-        expectFailure(expectedFirst);
+        expectFailure(whenTesting -> whenTesting.that(actual).isNotEqualTo(expected));
       }
     }
 
@@ -176,10 +141,9 @@ public class NumericComparisonTest extends BaseSubjectTestCase {
     short short41 = (short) 41;
     char char41 = (char) 41;
     int int41 = 41;
-    long long41 = (long) 41;
+    long long41 = 41;
 
-    ImmutableSet<Object> fortyOnes =
-        ImmutableSet.<Object>of(byte41, short41, char41, int41, long41);
+    ImmutableSet<Object> fortyOnes = ImmutableSet.of(byte41, short41, char41, int41, long41);
 
     for (Object first : fortyTwos) {
       for (Object second : fortyOnes) {
@@ -187,9 +151,5 @@ public class NumericComparisonTest extends BaseSubjectTestCase {
         assertThat(second).isNotEqualTo(first);
       }
     }
-  }
-
-  private IntegerSubject expectFailureWhenTestingThat(Integer actual) {
-    return expectFailure.whenTesting().that(actual);
   }
 }

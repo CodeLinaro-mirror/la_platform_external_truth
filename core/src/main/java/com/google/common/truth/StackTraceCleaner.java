@@ -17,12 +17,12 @@ package com.google.common.truth;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Sets.newIdentityHashSet;
 import static java.lang.Thread.currentThread;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
@@ -46,7 +46,7 @@ final class StackTraceCleaner {
    * the bottom. Collapses the frames for various frameworks in the middle of the trace as well.
    */
   static void cleanStackTrace(Throwable throwable) {
-    new StackTraceCleaner(throwable).clean(Sets.<Throwable>newIdentityHashSet());
+    new StackTraceCleaner(throwable).clean(newIdentityHashSet());
   }
 
   private final Throwable throwable;
@@ -80,10 +80,9 @@ final class StackTraceCleaner {
      */
 
     // Prevent infinite recursion if there is a reference cycle between Throwables.
-    if (seenThrowables.contains(throwable)) {
+    if (!seenThrowables.add(throwable)) {
       return;
     }
-    seenThrowables.add(throwable);
 
     StackTraceElement[] stackFrames = throwable.getStackTrace();
 
@@ -95,7 +94,7 @@ final class StackTraceCleaner {
 
     int endIndex = 0;
     for (;
-        endIndex < stackFrames.length && !isJUnitIntrastructure(stackFrames[endIndex]);
+        endIndex < stackFrames.length && !isJUnitInfrastructure(stackFrames[endIndex]);
         endIndex++) {
       // Find last frame of setup frames, and remove from there down.
     }
@@ -151,7 +150,7 @@ final class StackTraceCleaner {
     if (throwable.getCause() != null) {
       new StackTraceCleaner(throwable.getCause()).clean(seenThrowables);
     }
-    for (Throwable suppressed : Platform.getSuppressed(throwable)) {
+    for (Throwable suppressed : throwable.getSuppressed()) {
       new StackTraceCleaner(suppressed).clean(seenThrowables);
     }
   }
@@ -205,8 +204,9 @@ final class StackTraceCleaner {
     return isFromClassOrClassNestedInside(stackTraceElement, SUBJECT_CLASS)
         /*
          * Don't match classes _nested inside_ StandardSubjectBuilder because that would match
-         * Expect's Statement implementation. While we want to strip everything from there _down_, we
-         * don't want to strip everything from there _up_ (which would strip the test class itself!).
+         * Expect's Statement implementation. While we want to strip everything from there _down_,
+         * we don't want to strip everything from there _up_ (which would strip the test class
+         * itself!).
          *
          * (StandardSubjectBuilder is listed here only for its fail() methods, anyway, so we don't
          * have to worry about nested classes like we do with Subject.)
@@ -217,7 +217,7 @@ final class StackTraceCleaner {
   private static final ImmutableSet<String> JUNIT_INFRASTRUCTURE_CLASSES =
       ImmutableSet.of("org.junit.runner.Runner", "org.junit.runners.model.Statement");
 
-  private static boolean isJUnitIntrastructure(StackTraceElement stackTraceElement) {
+  private static boolean isJUnitInfrastructure(StackTraceElement stackTraceElement) {
     // It's not clear whether looking at nested classes here is useful, harmful, or neutral.
     return isFromClassOrClassNestedInside(stackTraceElement, JUNIT_INFRASTRUCTURE_CLASSES);
   }

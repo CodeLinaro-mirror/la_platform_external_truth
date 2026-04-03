@@ -1,17 +1,20 @@
-name: "truth"
-description:
-    "Fluent assertions for Java and Android"
+# This project was upgraded with external_updater.
+# Usage: tools/external_updater/updater.sh update external/truth
+# For more info, check https://cs.android.com/android/platform/superproject/main/+/main:tools/external_updater/README.md
 
+name: "truth"
+description: "Fluent assertions for Java and Android"
 third_party {
-  url {
-    type: HOMEPAGE
-    value: "https://truth.dev/"
-  }
-  url {
-    type: GIT
-    value: "https://github.com/google/truth.git"
-  }
-  version: "v1.4.4"
-  last_upgrade_date { year: 2024 month: 10 day: 25 }
   license_type: NOTICE
+  last_upgrade_date {
+    year: 2026
+    month: 3
+    day: 24
+  }
+  homepage: "https://truth.dev/"
+  identifier {
+    type: "Git"
+    value: "https://github.com/google/truth.git"
+    version: "fc54b9e4436ed8ca8bcae7dd71e07a6857e13836"
+  }
 }

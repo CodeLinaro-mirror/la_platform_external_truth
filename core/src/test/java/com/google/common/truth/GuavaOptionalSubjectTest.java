@@ -15,21 +15,19 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.FailureAssertions.assertFailureKeys;
+import static com.google.common.truth.FailureAssertions.assertFailureValue;
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
 
 import com.google.common.base.Optional;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for Guava {@link Optional} Subjects.
- *
- * @author Christian Gruber (cgruber@israfil.net)
- */
+/** Tests for {@link GuavaOptionalSubject}. */
 @RunWith(JUnit4.class)
-public class GuavaOptionalSubjectTest extends BaseSubjectTestCase {
+public class GuavaOptionalSubjectTest {
 
   @Test
   public void isPresent() {
@@ -38,14 +36,16 @@ public class GuavaOptionalSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void isPresentFailing() {
-    expectFailureWhenTestingThat(Optional.absent()).isPresent();
-    assertFailureKeys("expected to be present");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(Optional.absent()).isPresent());
+    assertFailureKeys(e, "expected to be present");
   }
 
   @Test
   public void isPresentFailingNull() {
-    expectFailureWhenTestingThat(null).isPresent();
-    assertFailureKeys("expected present optional", "but was");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Optional<?>) null).isPresent());
+    assertFailureKeys(e, "expected present optional", "but was");
   }
 
   @Test
@@ -55,15 +55,17 @@ public class GuavaOptionalSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void isAbsentFailing() {
-    expectFailureWhenTestingThat(Optional.of("foo")).isAbsent();
-    assertFailureKeys("expected to be absent", "but was present with value");
-    assertFailureValue("but was present with value", "foo");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(Optional.of("foo")).isAbsent());
+    assertFailureKeys(e, "expected to be absent", "but was present with value");
+    assertFailureValue(e, "but was present with value", "foo");
   }
 
   @Test
   public void isAbsentFailingNull() {
-    expectFailureWhenTestingThat(null).isAbsent();
-    assertFailureKeys("expected absent optional", "but was");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((Optional<?>) null).isAbsent());
+    assertFailureKeys(e, "expected absent optional", "but was");
   }
 
   @Test
@@ -73,28 +75,23 @@ public class GuavaOptionalSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void hasValue_failingWithAbsent() {
-    expectFailureWhenTestingThat(Optional.absent()).hasValue("foo");
-    assertFailureKeys("expected to have value", "but was absent");
-    assertFailureValue("expected to have value", "foo");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(Optional.absent()).hasValue("foo"));
+    assertFailureKeys(e, "expected to have value", "but was absent");
+    assertFailureValue(e, "expected to have value", "foo");
   }
 
   @Test
-  public void hasValue_npeWithNullParameter() {
-    try {
-      assertThat(Optional.of("foo")).hasValue(null);
-      fail("Expected NPE");
-    } catch (NullPointerException expected) {
-      assertThat(expected).hasMessageThat().contains("Optional");
-    }
+  public void hasValue_failingWithNullParameter() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(Optional.of("foo")).hasValue(null));
+    assertFailureKeys(e, "expected an optional with a null value, but that is impossible", "was");
   }
 
   @Test
   public void hasValue_failingWithWrongValue() {
-    expectFailureWhenTestingThat(Optional.of("foo")).hasValue("boo");
-    assertFailureValue("value of", "optional.get()");
-  }
-
-  private GuavaOptionalSubject expectFailureWhenTestingThat(Optional<?> actual) {
-    return expectFailure.whenTesting().that(actual);
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(Optional.of("foo")).hasValue("boo"));
+    assertFailureValue(e, "value of", "optional.get()");
   }
 }

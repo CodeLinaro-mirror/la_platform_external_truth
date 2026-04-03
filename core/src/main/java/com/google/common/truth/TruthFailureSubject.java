@@ -17,8 +17,6 @@
 package com.google.common.truth;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
 
@@ -26,16 +24,16 @@ import com.google.common.collect.ImmutableList;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Subject for {@link AssertionError} objects thrown by Truth. {@code TruthFailureSubject} contains
- * methods for asserting about the individual "facts" of those failures. This allows tests to avoid
- * asserting about the same fact more often than necessary, including avoiding asserting about facts
- * that are set by other subjects that the main subject delegates to. This keeps tests shorter and
- * less fragile.
+ * A subject for {@link AssertionError} objects thrown by Truth. {@code TruthFailureSubject}
+ * contains methods for asserting about the individual "facts" of those failures. This allows tests
+ * to avoid asserting about the same fact more often than necessary, including avoiding asserting
+ * about facts that are set by other subjects that the main subject delegates to. This keeps tests
+ * shorter and less fragile.
  *
  * <p>To create an instance, call {@link ExpectFailure#assertThat}. Or, if you're using a custom
  * message or failure strategy, pass {@link #truthFailures} to your {@code about(...)} call.
  *
- * <p>This class accepts any {@code AssertionError} value, but it will throw an exception if a
+ * <p>This class accepts any {@link AssertionError} value, but it will throw an exception if a
  * caller tries to access the facts of an error that wasn't produced by Truth.
  */
 public final class TruthFailureSubject extends ThrowableSubject {
@@ -49,23 +47,13 @@ public final class TruthFailureSubject extends ThrowableSubject {
    * ExpectFailure#assertThat}.
    */
   public static Factory<TruthFailureSubject, AssertionError> truthFailures() {
-    return FACTORY;
+    return TruthFailureSubject::new;
   }
-
-  private static final Factory<TruthFailureSubject, AssertionError> FACTORY =
-      new Factory<TruthFailureSubject, AssertionError>() {
-        @Override
-        public TruthFailureSubject createSubject(
-            FailureMetadata metadata, @Nullable AssertionError actual) {
-          return new TruthFailureSubject(metadata, actual, "failure");
-        }
-      };
 
   private final @Nullable AssertionError actual;
 
-  TruthFailureSubject(
-      FailureMetadata metadata, @Nullable AssertionError actual, @Nullable String typeDescription) {
-    super(metadata, actual, typeDescription);
+  private TruthFailureSubject(FailureMetadata metadata, @Nullable AssertionError actual) {
+    super(metadata, actual);
     this.actual = actual;
   }
 
@@ -82,7 +70,7 @@ public final class TruthFailureSubject extends ThrowableSubject {
   private static ImmutableList<String> getFactKeys(ErrorWithFacts error) {
     ImmutableList.Builder<String> facts = ImmutableList.builder();
     for (Fact fact : error.facts()) {
-      facts.add(fact.key);
+      facts.add(fact.getKey());
     }
     return facts.build();
   }
@@ -108,7 +96,7 @@ public final class TruthFailureSubject extends ThrowableSubject {
    * fail the test. To assert about such a failure, use {@linkplain #factValue(String, int) the
    * other overload} of {@code factValue}.
    */
-  public StringSubject factValue(String key) {
+  public StringSubject factValue(@Nullable String key) {
     return doFactValue(key, null);
   }
 
@@ -117,13 +105,24 @@ public final class TruthFailureSubject extends ThrowableSubject {
    * name. Most Truth failures do not contain multiple facts with the same key, so most tests should
    * use {@linkplain #factValue(String) the other overload} of {@code factValue}.
    */
-  public StringSubject factValue(String key, int index) {
-    checkArgument(index >= 0, "index must be nonnegative: %s", index);
+  public StringSubject factValue(@Nullable String key, int index) {
+    if (index < 0) {
+      failWithoutActual(
+          simpleFact("could not perform fact-value check because requested index was null"),
+          fact("requested key", key),
+          actualValue("for assertion about Truth failure"));
+      return ignoreCheck().that("");
+    }
     return doFactValue(key, index);
   }
 
-  private StringSubject doFactValue(String key, @Nullable Integer index) {
-    checkNotNull(key);
+  private StringSubject doFactValue(@Nullable String key, @Nullable Integer index) {
+    if (key == null) {
+      failWithoutActual(
+          simpleFact("could not perform fact-value check because requested key was null"),
+          actualValue("for assertion about Truth failure"));
+      return ignoreCheck().that("");
+    }
     if (!(actual instanceof ErrorWithFacts)) {
       failWithActual(simpleFact("expected a failure thrown by Truth's failure API"));
       return ignoreCheck().that("");
@@ -153,7 +152,7 @@ public final class TruthFailureSubject extends ThrowableSubject {
           fact("fact count was", factsWithName.size()));
       return ignoreCheck().that("");
     }
-    String value = factsWithName.get(firstNonNull(index, 0)).value;
+    String value = factsWithName.get(firstNonNull(index, 0)).getValue();
     if (value == null) {
       if (index == null) {
         failWithoutActual(
@@ -177,9 +176,9 @@ public final class TruthFailureSubject extends ThrowableSubject {
   }
 
   private static ImmutableList<Fact> factsWithName(ErrorWithFacts error, String key) {
-    ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+    ImmutableList.Builder<Fact> facts = factsBuilder();
     for (Fact fact : error.facts()) {
-      if (fact.key.equals(key)) {
+      if (fact.getKey().equals(key)) {
         facts.add(fact);
       }
     }

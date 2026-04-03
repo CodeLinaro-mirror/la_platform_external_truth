@@ -19,12 +19,12 @@ Read more at [the main website](https://truth.dev).
 [test assertions]: https://truth.dev/benefits#readable-assertions
 [failure messages]: https://truth.dev/benefits#readable-messages
 [comparison]: https://truth.dev/comparison
-[AssertJ]: http://joel-costigliola.github.io/assertj/
+[AssertJ]: https://assertj.github.io/
 [known_types]: https://truth.dev/known_types
 [extension]: https://truth.dev/extension
 [Guava]: https://github.com/google/guava
 [gh-pages-shield]: https://img.shields.io/badge/main%20site-truth.dev-ff55ff.png?style=flat
-[gh-pages-link]: https://truth.dev/
+[gh-pages-link]: https://truth.dev
 [ci-shield]: https://github.com/google/truth/workflows/CI/badge.svg?branch=master
 [ci-link]: https://github.com/google/truth/actions
 [maven-shield]: https://img.shields.io/maven-central/v/com.google.truth/truth.png

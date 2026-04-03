@@ -33,7 +33,7 @@ public final class EmployeeSubjectTest {
   // Note: not real employee IDs :-)
 
   private static final Employee KURT =
-      Employee.create("kak", 37802, "Kurt Alfred Kluever", Location.NYC, false);
+      Employee.create("kak", 37802, "Kurt Alfred Kluever", Location.NYC, /* isCeo= */ false);
 
   @Test
   public void id() {
@@ -52,9 +52,8 @@ public final class EmployeeSubjectTest {
     assertThat(KURT).hasUsername("kak");
     // Here's an example of asserting on the failure message.
     // Note that it uses the assertThat method from ExpectFailure.
-    AssertionError failure =
-        expectFailure(whenTesting -> whenTesting.that(KURT).hasUsername("sundar"));
-    assertThat(failure).factValue("value of").isEqualTo("employee.username()");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(KURT).hasUsername("sundar"));
+    assertThat(e).factValue("value of").isEqualTo("employee.username()");
   }
 
   @CanIgnoreReturnValue
