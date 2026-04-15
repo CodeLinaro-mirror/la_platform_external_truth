@@ -29,6 +29,11 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.gwtproject</groupId>
+      <artifactId>gwt-dev</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>com.google.auto.value</groupId>
       <artifactId>auto-value-annotations</artifactId>
     </dependency>
@@ -123,11 +128,31 @@
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>**/*GwtTest.java</exclude>
-          </excludes>
-        </configuration>
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <excludes>
+                <exclude>**/ActualValueInferenceTest.java</exclude>
+                <exclude>**/*GwtTest.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
+            <id>actualvalueinference-test</id>
+            <configuration>
+              <includes>
+                <include>**/ActualValueInferenceTest.java</include>
+              </includes>
+              <systemPropertyVariables>
+                <com.google.common.truth.force_infer_description>true</com.google.common.truth.force_infer_description>
+              </systemPropertyVariables>
+            </configuration>
+            <goals>
+              <goal>test</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
@@ -165,7 +190,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.1</version>
         <executions>
           <execution>
             <id>add-source</id>
@@ -183,7 +208,7 @@
       </plugin>
       <plugin>
         <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.1.0</version>
+        <version>3.2.0</version>
         <executions>
           <execution>
             <id>copy-gwt-files</id>
@@ -191,6 +216,8 @@
             <goals><goal>run</goal></goals>
             <configuration>
               <target name="copy-gwt-resources">
+                <delete dir="${project.build.directory}/gwt-sources" quiet="true" />
+
                 <copy toDir="${project.build.directory}/gwt-sources">
                   <fileset dir="${project.basedir}/src/main/java">
                     <include name="**/super/**/*.java"/>
@@ -215,6 +242,11 @@
                     <include name="**/super/**/*.java"/>
                   </fileset>
                 </replace>
+                <replace token="@NullMarked" value="">
+                  <fileset dir="${project.build.directory}/gwt-sources">
+                    <include name="**/super/**/*.java"/>
+                  </fileset>
+                </replace>
               </target>
             </configuration>
           </execution>
@@ -225,9 +257,8 @@
   <reporting>
     <plugins>
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-project-info-reports-plugin</artifactId>
-        <version>3.6.1</version>
+        <version>3.9.0</version>
       </plugin>
     </plugins>
   </reporting>

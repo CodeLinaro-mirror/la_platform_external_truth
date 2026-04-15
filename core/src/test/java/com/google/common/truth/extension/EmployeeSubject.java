@@ -23,13 +23,11 @@ import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.LongSubject;
 import com.google.common.truth.StringSubject;
 import com.google.common.truth.Subject;
+import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
-/**
- * A <a href="https://github.com/google/truth">Truth</a> subject for {@link Employee}.
- *
- * @author Kurt Alfred Kluever (kak@google.com)
- */
+/** A <a href="https://github.com/google/truth">Truth</a> subject for {@link Employee}. */
+@NullMarked
 public final class EmployeeSubject extends Subject {
 
   // User-defined entry point
@@ -38,11 +36,11 @@ public final class EmployeeSubject extends Subject {
   }
 
   // Static method for getting the subject factory (for use with assertAbout())
-  public static Subject.Factory<EmployeeSubject, Employee> employees() {
+  public static Factory<EmployeeSubject, Employee> employees() {
     return EmployeeSubject::new;
   }
 
-  private final Employee actual;
+  private final @Nullable Employee actual;
 
   private EmployeeSubject(FailureMetadata failureMetadata, @Nullable Employee subject) {
     super(failureMetadata, subject);

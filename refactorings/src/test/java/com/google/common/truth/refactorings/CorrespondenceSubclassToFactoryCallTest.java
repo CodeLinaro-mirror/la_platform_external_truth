@@ -23,7 +23,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** @author cpovirk@google.com (Chris Povirk) */
 @RunWith(JUnit4.class)
 public class CorrespondenceSubclassToFactoryCallTest {
   private BugCheckerRefactoringTestHelper refactoringHelper;
@@ -39,39 +38,39 @@ public class CorrespondenceSubclassToFactoryCallTest {
   }
 
   @Test
-  public void testPositiveCase() {
+  public void positiveCase() {
     compilationHelper
-        .addSourceFile("CorrespondenceSubclassToFactoryCallPositiveCases.java")
+        .addSourceFile("testdata/CorrespondenceSubclassToFactoryCallPositiveCases.java")
         .doTest();
   }
 
   @Test
-  public void testPositiveCase2() {
+  public void positiveCase2() {
     compilationHelper
-        .addSourceFile("CorrespondenceSubclassToFactoryCallPositiveCases2.java")
+        .addSourceFile("testdata/CorrespondenceSubclassToFactoryCallPositiveCases2.java")
         .doTest();
   }
 
   @Test
-  public void testNegativeCase() {
+  public void negativeCase() {
     compilationHelper
-        .addSourceFile("CorrespondenceSubclassToFactoryCallNegativeCases.java")
+        .addSourceFile("testdata/CorrespondenceSubclassToFactoryCallNegativeCases.java")
         .doTest();
   }
 
   @Test
   public void refactoring() {
     refactoringHelper
-        .addInput("CorrespondenceSubclassToFactoryCallPositiveCases.java")
-        .addOutput("CorrespondenceSubclassToFactoryCallPositiveCases_expected.java")
+        .addInput("testdata/CorrespondenceSubclassToFactoryCallPositiveCases.java")
+        .addOutput("testdata/CorrespondenceSubclassToFactoryCallPositiveCases_expected.java")
         .doTest();
   }
 
   @Test
   public void refactoring2() {
     refactoringHelper
-        .addInput("CorrespondenceSubclassToFactoryCallPositiveCases2.java")
-        .addOutput("CorrespondenceSubclassToFactoryCallPositiveCases2_expected.java")
+        .addInput("testdata/CorrespondenceSubclassToFactoryCallPositiveCases2.java")
+        .addOutput("testdata/CorrespondenceSubclassToFactoryCallPositiveCases2_expected.java")
         .doTest();
   }
 }

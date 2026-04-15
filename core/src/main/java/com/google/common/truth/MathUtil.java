@@ -16,83 +16,47 @@
 
 package com.google.common.truth;
 
-import static java.lang.Math.subtractExact;
+import static java.lang.Double.isFinite;
+import static java.lang.Math.abs;
 
-import com.google.common.primitives.Doubles;
 
 /** Math utilities to be shared by numeric subjects. */
 final class MathUtil {
   private MathUtil() {}
 
   /**
-   * Returns true iff {@code left} and {@code right} are values within {@code tolerance} of each
-   * other.
-   */
-  /* package */ static boolean equalWithinTolerance(long left, long right, long tolerance) {
-    try {
-      // subtractExact is always desugared.
-      @SuppressWarnings("Java7ApiChecker")
-      long absDiff = Math.abs(subtractExact(left, right));
-      return 0 <= absDiff && absDiff <= Math.abs(tolerance);
-    } catch (ArithmeticException e) {
-      // The numbers are so far apart their difference isn't even a long.
-      return false;
-    }
-  }
-
-  /**
-   * Returns true iff {@code left} and {@code right} are values within {@code tolerance} of each
-   * other.
-   */
-  /* package */ static boolean equalWithinTolerance(int left, int right, int tolerance) {
-    try {
-      // subtractExact is always desugared.
-      @SuppressWarnings("Java7ApiChecker")
-      int absDiff = Math.abs(subtractExact(left, right));
-      return 0 <= absDiff && absDiff <= Math.abs(tolerance);
-    } catch (ArithmeticException e) {
-      // The numbers are so far apart their difference isn't even a int.
-      return false;
-    }
-  }
-
-  /**
    * Returns true iff {@code left} and {@code right} are finite values within {@code tolerance} of
-   * each other. Note that both this method and {@link #notEqualWithinTolerance} returns false if
+   * each other. Note that both this method and {@link #notEqualWithinTolerance} return false if
    * either {@code left} or {@code right} is infinite or NaN.
    */
   public static boolean equalWithinTolerance(double left, double right, double tolerance) {
-    return Math.abs(left - right) <= Math.abs(tolerance);
+    return abs(left - right) <= abs(tolerance);
   }
 
   /**
    * Returns true iff {@code left} and {@code right} are finite values within {@code tolerance} of
-   * each other. Note that both this method and {@link #notEqualWithinTolerance} returns false if
+   * each other. Note that both this method and {@link #notEqualWithinTolerance} return false if
    * either {@code left} or {@code right} is infinite or NaN.
    */
   public static boolean equalWithinTolerance(float left, float right, float tolerance) {
-    return equalWithinTolerance((double) left, (double) right, (double) tolerance);
+    return equalWithinTolerance(left, right, (double) tolerance);
   }
 
   /**
    * Returns true iff {@code left} and {@code right} are finite values not within {@code tolerance}
-   * of each other. Note that both this method and {@link #equalWithinTolerance} returns false if
+   * of each other. Note that both this method and {@link #equalWithinTolerance} return false if
    * either {@code left} or {@code right} is infinite or NaN.
    */
   public static boolean notEqualWithinTolerance(double left, double right, double tolerance) {
-    if (Doubles.isFinite(left) && Doubles.isFinite(right)) {
-      return Math.abs(left - right) > Math.abs(tolerance);
-    } else {
-      return false;
-    }
+    return isFinite(left) && isFinite(right) && abs(left - right) > abs(tolerance);
   }
 
   /**
    * Returns true iff {@code left} and {@code right} are finite values not within {@code tolerance}
-   * of each other. Note that both this method and {@link #equalWithinTolerance} returns false if
+   * of each other. Note that both this method and {@link #equalWithinTolerance} return false if
    * either {@code left} or {@code right} is infinite or NaN.
    */
   public static boolean notEqualWithinTolerance(float left, float right, float tolerance) {
-    return notEqualWithinTolerance((double) left, (double) right, (double) tolerance);
+    return notEqualWithinTolerance(left, right, (double) tolerance);
   }
 }

@@ -15,16 +15,17 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.collect.Iterables.concat;
 import static com.google.common.collect.Iterables.size;
 import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Lists.newLinkedList;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.IterableSubject.ElementFactGrouping.ALL_IN_ONE_FACT;
 import static com.google.common.truth.IterableSubject.ElementFactGrouping.FACT_PER_ELEMENT;
+import static com.google.common.truth.Platform.stringValueForFailure;
 import static com.google.common.truth.SubjectUtils.accumulate;
 import static com.google.common.truth.SubjectUtils.annotateEmptyStrings;
 import static com.google.common.truth.SubjectUtils.asList;
@@ -35,12 +36,14 @@ import static com.google.common.truth.SubjectUtils.entryString;
 import static com.google.common.truth.SubjectUtils.hasMatchingToStringPair;
 import static com.google.common.truth.SubjectUtils.iterableToCollection;
 import static com.google.common.truth.SubjectUtils.iterableToList;
+import static com.google.common.truth.SubjectUtils.listifyNullableVarargs;
+import static com.google.common.truth.SubjectUtils.longName;
 import static com.google.common.truth.SubjectUtils.objectToTypeName;
 import static com.google.common.truth.SubjectUtils.retainMatchingToString;
+import static java.lang.Integer.toHexString;
+import static java.lang.System.identityHashCode;
 
 import com.google.common.base.Function;
-import com.google.common.base.Objects;
-import com.google.common.base.Optional;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableList;
@@ -51,7 +54,6 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.LinkedHashMultiset;
 import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.Ordering;
 import com.google.common.collect.Sets;
@@ -66,11 +68,12 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for {@link Iterable} subjects.
+ * A subject for {@link Iterable} values.
  *
  * <p><b>Note:</b>
  *
@@ -83,30 +86,21 @@ import org.jspecify.annotations.Nullable;
  *   <li>Assertions may also require that the elements in the given {@link Iterable} implement
  *       {@link Object#hashCode} correctly.
  * </ul>
- *
- * @author Kurt Alfred Kluever
- * @author Pete Gillin
  */
+// Some builder calls need to be separate, so let's keep them all separate.
+@SuppressWarnings("BuilderCollapser")
 // Can't be final since MultisetSubject and SortedSetSubject extend it
 public class IterableSubject extends Subject {
 
   private final @Nullable Iterable<?> actual;
 
   /**
-   * Constructor for use by subclasses. If you want to create an instance of this class itself, call
-   * {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
+   * The constructor is for use by subclasses only. If you want to create an instance of this class
+   * itself, call {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
    */
-  protected IterableSubject(FailureMetadata metadata, @Nullable Iterable<?> iterable) {
-    this(metadata, iterable, null);
-  }
-
-  /** Constructor for use by package-private callers. */
-  IterableSubject(
-      FailureMetadata metadata,
-      @Nullable Iterable<?> iterable,
-      @Nullable String typeDescriptionOverride) {
-    super(metadata, iterable, typeDescriptionOverride);
-    this.actual = iterable;
+  protected IterableSubject(FailureMetadata metadata, @Nullable Iterable<?> actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
   @Override
@@ -116,8 +110,8 @@ public class IterableSubject extends Subject {
       // so that we can avoid things like
       // "com.google.common.graph.Traverser$GraphTraverser$1@5e316c74"
       String objectToString =
-          actual.getClass().getName() + '@' + Integer.toHexString(System.identityHashCode(actual));
-      if (actual.toString().equals(objectToString)) {
+          longName(actual.getClass()) + '@' + toHexString(identityHashCode(actual));
+      if (stringValueForFailure(actual).equals(objectToString)) {
         return Iterables.toString(actual);
       }
     }
@@ -127,7 +121,7 @@ public class IterableSubject extends Subject {
   @Override
   public void isEqualTo(@Nullable Object expected) {
     @SuppressWarnings("UndefinedEquals") // method contract requires testing iterables for equality
-    boolean equal = Objects.equal(actual, expected);
+    boolean equal = Objects.equals(actual, expected);
     if (equal) {
       return;
     }
@@ -148,31 +142,45 @@ public class IterableSubject extends Subject {
     }
   }
 
-  /** Fails if the subject is not empty. */
+  /** Checks that the actual iterable is empty. */
   public final void isEmpty() {
-    if (!Iterables.isEmpty(checkNotNull(actual))) {
+    if (actual == null) {
+      failWithActual(simpleFact("expected an empty iterable"));
+    } else if (!Iterables.isEmpty(actual)) {
       failWithActual(simpleFact("expected to be empty"));
     }
   }
 
-  /** Fails if the subject is empty. */
+  /** Checks that the actual iterable is not empty. */
   public final void isNotEmpty() {
-    if (Iterables.isEmpty(checkNotNull(actual))) {
+    if (actual == null) {
+      failWithActual(simpleFact("expected a nonempty iterable"));
+    } else if (Iterables.isEmpty(actual)) {
       failWithoutActual(simpleFact("expected not to be empty"));
     }
   }
 
-  /** Fails if the subject does not have the given size. */
-  public final void hasSize(int expectedSize) {
-    checkArgument(expectedSize >= 0, "expectedSize(%s) must be >= 0", expectedSize);
-    int actualSize = size(checkNotNull(actual));
-    check("size()").that(actualSize).isEqualTo(expectedSize);
+  /** Checks that the actual iterable has the given size. */
+  public final void hasSize(int size) {
+    if (actual == null) {
+      failWithActual("expected an iterable with size", size);
+    } else if (size < 0) {
+      failWithoutActual(
+          simpleFact("expected an iterable with a negative size, but that is impossible"),
+          fact("expected size", size),
+          fact("actual size", size(actual)),
+          actualContents());
+    } else {
+      check("size()").that(size(actual)).isEqualTo(size);
+    }
   }
 
-  /** Checks (with a side-effect failure) that the subject contains the supplied item. */
+  /** Checks that the actual iterable contains the supplied item. */
   public final void contains(@Nullable Object element) {
-    if (!Iterables.contains(checkNotNull(actual), element)) {
-      List<@Nullable Object> elementList = newArrayList(element);
+    if (actual == null) {
+      failWithActual("expected an iterable that contains", element);
+    } else if (!Iterables.contains(actual, element)) {
+      List<@Nullable Object> elementList = asList(element);
       if (hasMatchingToStringPair(actual, elementList)) {
         failWithoutActual(
             fact("expected to contain", element),
@@ -189,17 +197,23 @@ public class IterableSubject extends Subject {
     }
   }
 
-  /** Checks (with a side-effect failure) that the subject does not contain the supplied item. */
+  /** Checks that the actual iterable does not contain the supplied item. */
   public final void doesNotContain(@Nullable Object element) {
-    if (Iterables.contains(checkNotNull(actual), element)) {
+    if (actual == null) {
+      failWithActual("expected an iterable that does not contain", element);
+    } else if (Iterables.contains(actual, element)) {
       failWithActual("expected not to contain", element);
     }
   }
 
-  /** Checks that the subject does not contain duplicate elements. */
+  /** Checks that the actual iterable does not contain duplicate elements. */
   public final void containsNoDuplicates() {
-    List<Multiset.Entry<?>> duplicates = newArrayList();
-    for (Multiset.Entry<?> entry : LinkedHashMultiset.create(checkNotNull(actual)).entrySet()) {
+    if (actual == null) {
+      failWithActual(simpleFact("expected an iterable that does not contain duplicates"));
+      return;
+    }
+    List<Multiset.Entry<?>> duplicates = new ArrayList<>();
+    for (Multiset.Entry<?> entry : LinkedHashMultiset.create(actual).entrySet()) {
       if (entry.getCount() > 1) {
         duplicates.add(entry);
       }
@@ -207,25 +221,35 @@ public class IterableSubject extends Subject {
     if (!duplicates.isEmpty()) {
       failWithoutActual(
           simpleFact("expected not to contain duplicates"),
+          // TODO(cpovirk): Consider a format like SubjectUtils.entryString instead.
           fact("but contained", duplicates),
           fullContents());
     }
   }
 
-  /** Checks that the subject contains at least one of the provided objects or fails. */
+  /** Checks that the actual iterable contains at least one of the provided objects. */
   public final void containsAnyOf(
       @Nullable Object first, @Nullable Object second, @Nullable Object @Nullable ... rest) {
     containsAnyIn(accumulate(first, second, rest));
   }
 
   /**
-   * Checks that the subject contains at least one of the objects contained in the provided
-   * collection or fails.
+   * Checks that the actual iterable contains at least one of the objects contained in the provided
+   * collection.
    */
   // TODO(cpovirk): Consider using makeElementFacts-style messages here, in contains(), etc.
   public final void containsAnyIn(@Nullable Iterable<?> expected) {
-    checkNotNull(expected);
-    Collection<?> actual = iterableToCollection(checkNotNull(this.actual));
+    if (expected == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because expected iterable was null"),
+          actualContents());
+      return;
+    } else if (actual == null) {
+      failWithActual(
+          "expected an iterable that contains any of", countDuplicatesAndAddTypeInfo(expected));
+      return;
+    }
+    Collection<?> actual = iterableToCollection(this.actual);
     for (Object item : expected) {
       if (actual.contains(item)) {
         return;
@@ -238,7 +262,7 @@ public class IterableSubject extends Subject {
           fact(
               "though it did contain",
               countDuplicatesAndAddTypeInfo(
-                  retainMatchingToString(checkNotNull(this.actual), /* itemsToCheck= */ expected))),
+                  retainMatchingToString(actual, /* itemsToCheck= */ expected))),
           fullContents());
     } else {
       failWithActual("expected to contain any of", expected);
@@ -246,34 +270,23 @@ public class IterableSubject extends Subject {
   }
 
   /**
-   * Checks that the subject contains at least one of the objects contained in the provided array or
-   * fails.
+   * Checks that the actual iterable contains at least one of the objects contained in the provided
+   * array.
    */
   @SuppressWarnings("AvoidObjectArrays")
-  public final void containsAnyIn(@Nullable Object[] expected) {
+  public final void containsAnyIn(@Nullable Object @Nullable [] expected) {
+    if (expected == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because expected array was null"),
+          actualContents());
+      return;
+    }
     containsAnyIn(asList(expected));
   }
 
   /**
-   * Checks that the actual iterable contains at least all the expected elements or fails. If an
-   * element appears more than once in the expected elements to this call then it must appear at
-   * least that number of times in the actual elements.
-   *
-   * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
-   * on the object returned by this method. The expected elements must appear in the given order
-   * within the actual elements, but they are not required to be consecutive.
-   */
-  @CanIgnoreReturnValue
-  public final Ordered containsAtLeast(
-      @Nullable Object firstExpected,
-      @Nullable Object secondExpected,
-      @Nullable Object @Nullable ... restOfExpected) {
-    return containsAtLeastElementsIn(accumulate(firstExpected, secondExpected, restOfExpected));
-  }
-
-  /**
-   * Checks that the actual iterable contains at least all the expected elements or fails. If an
-   * element appears more than once in the expected elements then it must appear at least that
+   * Checks that the actual iterable contains at least all the expected elements. If an element
+   * appears more than once in the expected elements to this call then it must appear at least that
    * number of times in the actual elements.
    *
    * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
@@ -281,22 +294,78 @@ public class IterableSubject extends Subject {
    * within the actual elements, but they are not required to be consecutive.
    */
   @CanIgnoreReturnValue
-  public final Ordered containsAtLeastElementsIn(@Nullable Iterable<?> expectedIterable) {
-    List<?> actual = Lists.newLinkedList(checkNotNull(this.actual));
-    Collection<?> expected = iterableToCollection(expectedIterable);
+  public final Ordered containsAtLeast(
+      @Nullable Object first, @Nullable Object second, @Nullable Object @Nullable ... rest) {
+    return containsAtLeastElementsIn(accumulate(first, second, rest));
+  }
 
-    List<@Nullable Object> missing = newArrayList();
-    List<@Nullable Object> actualNotInOrder = newArrayList();
+  /**
+   * Checks that the actual iterable contains at least all the expected elements. If an element
+   * appears more than once in the expected elements then it must appear at least that number of
+   * times in the actual elements.
+   *
+   * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
+   * on the object returned by this method. The expected elements must appear in the given order
+   * within the actual elements, but they are not required to be consecutive.
+   */
+  @CanIgnoreReturnValue
+  public final Ordered containsAtLeastElementsIn(@Nullable Iterable<?> expected) {
+    if (expected == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because expected iterable was null"),
+          actualContents());
+      return ALREADY_FAILED;
+    }
+    return containsAtLeastElementsInImpl(iterableToCollection(expected));
+  }
+
+  /**
+   * Checks that the actual iterable contains at least all the expected elements. If an element
+   * appears more than once in the expected elements then it must appear at least that number of
+   * times in the actual elements.
+   *
+   * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
+   * on the object returned by this method. The expected elements must appear in the given order
+   * within the actual elements, but they are not required to be consecutive.
+   */
+  @CanIgnoreReturnValue
+  @SuppressWarnings("AvoidObjectArrays")
+  public final Ordered containsAtLeastElementsIn(@Nullable Object @Nullable [] expected) {
+    if (expected == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because expected array was null"),
+          actualContents());
+      return ALREADY_FAILED;
+    }
+    return containsAtLeastElementsIn(asList(expected));
+  }
+
+  /**
+   * Helper method for {@link #containsAtLeastElementsIn} just so that we can use the name "{@code
+   * expected}" for a {@link Collection} instead of the original {@link Iterable} parameter.
+   */
+  private Ordered containsAtLeastElementsInImpl(Collection<?> expected) {
+    Iterable<?> actual = this.actual; // to make our nullness checker happy
+    if (actual == null) {
+      failWithActual(
+          "expected an iterable that contains at least", countDuplicatesAndAddTypeInfo(expected));
+      return ALREADY_FAILED;
+    }
+
+    List<?> mutableActual = newLinkedList(actual);
+
+    List<@Nullable Object> missing = new ArrayList<>();
+    List<@Nullable Object> actualNotInOrder = new ArrayList<>();
 
     boolean ordered = true;
     // step through the expected elements...
     for (Object e : expected) {
-      int index = actual.indexOf(e);
+      int index = mutableActual.indexOf(e);
       if (index != -1) { // if we find the element in the actual list...
         // drain all the elements that come before that element into actualNotInOrder
-        moveElements(actual, actualNotInOrder, index);
+        moveElements(mutableActual, actualNotInOrder, index);
         // and remove the element from the actual list
-        actual.remove(0);
+        mutableActual.remove(0);
       } else { // otherwise try removing it from actualNotInOrder...
         if (actualNotInOrder.remove(e)) { // if it was in actualNotInOrder, we're not in order
           ordered = false;
@@ -307,50 +376,32 @@ public class IterableSubject extends Subject {
     }
     // if we have any missing expected elements, fail
     if (!missing.isEmpty()) {
-      return failAtLeast(expected, missing);
+      return failAtLeast(actual, expected, missing);
     }
 
     return ordered
         ? IN_ORDER
-        : new Ordered() {
-          @Override
-          public void inOrder() {
-            ImmutableList.Builder<Fact> facts = ImmutableList.builder();
-            facts.add(simpleFact("required elements were all found, but order was wrong"));
-            facts.add(fact("expected order for required elements", expected));
-            List<Object> actualOrder =
-                Lists.newArrayList(checkNotNull(IterableSubject.this.actual));
-            if (actualOrder.retainAll(expected)) {
-              facts.add(fact("but order was", actualOrder));
-              facts.add(fullContents());
-              failWithoutActual(facts.build());
-            } else {
-              failWithActual(facts.build());
-            }
+        : () -> {
+          ImmutableList.Builder<Fact> facts = factsBuilder();
+          facts.add(simpleFact("required elements were all found, but order was wrong"));
+          facts.add(fact("expected order for required elements", expected));
+          List<Object> actualOrder = newArrayList(actual);
+          if (actualOrder.retainAll(expected)) {
+            facts.add(fact("but order was", actualOrder));
+            facts.add(fullContents());
+            failWithoutActual(facts.build());
+          } else {
+            failWithActual(facts.build());
           }
         };
   }
 
-  /**
-   * Checks that the actual iterable contains at least all the expected elements or fails. If an
-   * element appears more than once in the expected elements then it must appear at least that
-   * number of times in the actual elements.
-   *
-   * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
-   * on the object returned by this method. The expected elements must appear in the given order
-   * within the actual elements, but they are not required to be consecutive.
-   */
-  @CanIgnoreReturnValue
-  @SuppressWarnings("AvoidObjectArrays")
-  public final Ordered containsAtLeastElementsIn(@Nullable Object[] expected) {
-    return containsAtLeastElementsIn(asList(expected));
-  }
-
-  private Ordered failAtLeast(Collection<?> expected, Collection<?> missingRawObjects) {
+  private Ordered failAtLeast(
+      Iterable<?> actual, Collection<?> expected, Collection<?> missingRawObjects) {
     List<?> nearMissRawObjects =
-        retainMatchingToString(checkNotNull(actual), /* itemsToCheck= */ missingRawObjects);
+        retainMatchingToString(actual, /* itemsToCheck= */ missingRawObjects);
 
-    ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+    ImmutableList.Builder<Fact> facts = factsBuilder();
     facts.addAll(
         makeElementFactsForBoth(
             "missing", missingRawObjects, "though it did contain", nearMissRawObjects));
@@ -381,10 +432,11 @@ public class IterableSubject extends Subject {
   }
 
   /**
-   * Checks that a subject contains exactly the provided objects or fails.
+   * Checks that the actual iterable contains exactly the provided objects.
    *
    * <p>Multiplicity is respected. For example, an object duplicated exactly 3 times in the
-   * parameters asserts that the object must likewise be duplicated exactly 3 times in the subject.
+   * parameters asserts that the object must likewise be duplicated exactly 3 times in the actual
+   * iterable.
    *
    * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
    * on the object returned by this method.
@@ -394,33 +446,35 @@ public class IterableSubject extends Subject {
    * elements, not an element itself. This helps human readers and avoids a compiler warning.
    */
   @CanIgnoreReturnValue
-  public final Ordered containsExactly(@Nullable Object @Nullable ... varargs) {
-    List<@Nullable Object> expected =
-        (varargs == null) ? newArrayList((@Nullable Object) null) : asList(varargs);
+  public final Ordered containsExactly(@Nullable Object @Nullable ... expected) {
     return containsExactlyElementsIn(
-        expected, varargs != null && varargs.length == 1 && varargs[0] instanceof Iterable);
+        listifyNullableVarargs(expected),
+        /* addElementsInWarning= */ expected != null
+            && expected.length == 1
+            && expected[0] instanceof Iterable);
   }
 
   /**
-   * Checks that a subject contains exactly the provided objects or fails.
+   * Checks that the actual iterable contains exactly the provided objects.
    *
    * <p>Multiplicity is respected. For example, an object duplicated exactly 3 times in the {@code
    * Iterable} parameter asserts that the object must likewise be duplicated exactly 3 times in the
-   * subject.
+   * actual iterable.
    *
    * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
    * on the object returned by this method.
    */
   @CanIgnoreReturnValue
   public final Ordered containsExactlyElementsIn(@Nullable Iterable<?> expected) {
-    return containsExactlyElementsIn(expected, false);
+    return containsExactlyElementsIn(expected, /* addElementsInWarning= */ false);
   }
 
   /**
-   * Checks that a subject contains exactly the provided objects or fails.
+   * Checks that the actual iterable contains exactly the provided objects.
    *
    * <p>Multiplicity is respected. For example, an object duplicated exactly 3 times in the array
-   * parameter asserts that the object must likewise be duplicated exactly 3 times in the subject.
+   * parameter asserts that the object must likewise be duplicated exactly 3 times in the actual
+   * iterable.
    *
    * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
    * on the object returned by this method.
@@ -432,16 +486,30 @@ public class IterableSubject extends Subject {
     "ContainsExactlyElementsInWithVarArgsToExactly"
   })
   public final Ordered containsExactlyElementsIn(@Nullable Object @Nullable [] expected) {
-    return containsExactlyElementsIn(asList(checkNotNull(expected)));
+    if (expected == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because expected array was null"),
+          actualContents());
+      return ALREADY_FAILED;
+    }
+    return containsExactlyElementsIn(asList(expected));
   }
 
   private Ordered containsExactlyElementsIn(
-      @Nullable Iterable<?> required, boolean addElementsInWarning) {
-    checkNotNull(required);
-    Iterator<?> actualIter = checkNotNull(actual).iterator();
-    Iterator<?> requiredIter = required.iterator();
+      @Nullable Iterable<?> expected, boolean addElementsInWarning) {
+    if (expected == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because expected iterable was null"),
+          actualContents());
+      return ALREADY_FAILED;
+    } else if (actual == null) {
+      failWithActual("expected an iterable that contains exactly", expected);
+      return ALREADY_FAILED;
+    }
+    Iterator<?> actualIter = actual.iterator();
+    Iterator<?> expectedIter = expected.iterator();
 
-    if (!requiredIter.hasNext()) {
+    if (!expectedIter.hasNext()) {
       if (actualIter.hasNext()) {
         isEmpty(); // fails
         return ALREADY_FAILED;
@@ -452,20 +520,20 @@ public class IterableSubject extends Subject {
 
     // Step through both iterators comparing elements pairwise.
     boolean isFirst = true;
-    while (actualIter.hasNext() && requiredIter.hasNext()) {
+    while (actualIter.hasNext() && expectedIter.hasNext()) {
       Object actualElement = actualIter.next();
-      Object requiredElement = requiredIter.next();
+      Object expectedElement = expectedIter.next();
 
       // As soon as we encounter a pair of elements that differ, we know that inOrder()
       // cannot succeed, so we can check the rest of the elements more normally.
       // Since any previous pairs of elements we iterated over were equal, they have no
       // effect on the result now.
-      if (!Objects.equal(actualElement, requiredElement)) {
-        if (isFirst && !actualIter.hasNext() && !requiredIter.hasNext()) {
+      if (!Objects.equals(actualElement, expectedElement)) {
+        if (isFirst && !actualIter.hasNext() && !expectedIter.hasNext()) {
           /*
            * There's exactly one actual element and exactly one expected element, and they don't
            * match, so throw a ComparisonFailure. The logical way to do that would be
-           * `check(...).that(actualElement).isEqualTo(requiredElement)`. But isEqualTo has magic
+           * `check(...).that(actualElement).isEqualTo(expectedElement)`. But isEqualTo has magic
            * behavior for arrays and primitives, behavior that's inconsistent with how this method
            * otherwise behaves. For consistency, we want to rely only on the equal() call we've
            * already made. So we expose a special method for this and call it from here.
@@ -480,16 +548,16 @@ public class IterableSubject extends Subject {
            */
           checkNoNeedToDisplayBothValues("onlyElement()")
               .that(actualElement)
-              .failEqualityCheckForEqualsWithoutDescription(requiredElement);
+              .failEqualityCheckForEqualsWithoutDescription(expectedElement);
           return ALREADY_FAILED;
         }
         // Missing elements; elements that are not missing will be removed as we iterate.
-        List<@Nullable Object> missing = newArrayList();
-        missing.add(requiredElement);
-        Iterators.addAll(missing, requiredIter);
+        List<@Nullable Object> missing = new ArrayList<>();
+        missing.add(expectedElement);
+        Iterators.addAll(missing, expectedIter);
 
-        // Extra elements that the subject had but shouldn't have.
-        List<@Nullable Object> extra = newArrayList();
+        // Extra elements that the actual iterable had but shouldn't have.
+        List<@Nullable Object> extra = new ArrayList<>();
 
         // Remove all actual elements from missing, and add any that weren't in missing
         // to extra.
@@ -508,15 +576,11 @@ public class IterableSubject extends Subject {
            * This containsExactly() call is a success. But the iterables were not in the same order,
            * so return an object that will fail the test if the user calls inOrder().
            */
-          return new Ordered() {
-            @Override
-            public void inOrder() {
+          return () ->
               failWithActual(
-                  simpleFact("contents match, but order was wrong"), fact("expected", required));
-            }
-          };
+                  simpleFact("contents match, but order was wrong"), fact("expected", expected));
         }
-        return failExactly(required, addElementsInWarning, missing, extra);
+        return failExactly(expected, addElementsInWarning, missing, extra);
       }
 
       isFirst = false;
@@ -524,18 +588,18 @@ public class IterableSubject extends Subject {
 
     // Here,  we must have reached the end of one of the iterators without finding any
     // pairs of elements that differ. If the actual iterator still has elements, they're
-    // extras. If the required iterator has elements, they're missing elements.
+    // extras. If the expected iterator has elements, they're missing elements.
     if (actualIter.hasNext()) {
       return failExactly(
-          required,
+          expected,
           addElementsInWarning,
           /* missingRawObjects= */ ImmutableList.of(),
           /* extraRawObjects= */ newArrayList(actualIter));
-    } else if (requiredIter.hasNext()) {
+    } else if (expectedIter.hasNext()) {
       return failExactly(
-          required,
+          expected,
           addElementsInWarning,
-          /* missingRawObjects= */ newArrayList(requiredIter),
+          /* missingRawObjects= */ newArrayList(expectedIter),
           /* extraRawObjects= */ ImmutableList.of());
     }
 
@@ -545,14 +609,14 @@ public class IterableSubject extends Subject {
   }
 
   private Ordered failExactly(
-      Iterable<?> required,
+      Iterable<?> expected,
       boolean addElementsInWarning,
       Collection<?> missingRawObjects,
       Collection<?> extraRawObjects) {
-    ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+    ImmutableList.Builder<Fact> facts = factsBuilder();
     facts.addAll(
         makeElementFactsForBoth("missing", missingRawObjects, "unexpected", extraRawObjects));
-    facts.add(fact("expected", required));
+    facts.add(fact("expected", expected));
     facts.add(butWas());
     if (addElementsInWarning) {
       facts.add(
@@ -572,7 +636,7 @@ public class IterableSubject extends Subject {
       String secondKey,
       Collection<?> secondCollection) {
     // TODO(kak): Possible enhancement: Include "[1 copy]" if the element does appear in
-    // the subject but not enough times. Similarly for unexpected extra items.
+    // the actual iterable but not enough times. Similarly for unexpected extra items.
     boolean addTypeInfo = hasMatchingToStringPair(firstCollection, secondCollection);
     DuplicateGroupedAndTyped first =
         countDuplicatesAndMaybeAddTypeInfoReturnObject(firstCollection, addTypeInfo);
@@ -580,7 +644,7 @@ public class IterableSubject extends Subject {
         countDuplicatesAndMaybeAddTypeInfoReturnObject(secondCollection, addTypeInfo);
     ElementFactGrouping grouping = pickGrouping(first.entrySet(), second.entrySet());
 
-    ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+    ImmutableList.Builder<Fact> facts = factsBuilder();
     ImmutableList<Fact> firstFacts = makeElementFacts(firstKey, first, grouping);
     ImmutableList<Fact> secondFacts = makeElementFacts(secondKey, second, grouping);
     facts.addAll(firstFacts);
@@ -606,7 +670,7 @@ public class IterableSubject extends Subject {
       return ImmutableList.of(fact(keyToGoWithElementsString(label, elements), elements));
     }
 
-    ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+    ImmutableList.Builder<Fact> facts = factsBuilder();
     facts.add(simpleFact(keyToServeAsHeader(label, elements)));
     int n = 1;
     for (Multiset.Entry<?> entry : elements.entrySet()) {
@@ -641,8 +705,8 @@ public class IterableSubject extends Subject {
      * an associated value, so it won't factor into alignment.
      */
     String key = keyToGoWithElementsString(label, elements);
-    if (elements.homogeneousTypeToDisplay.isPresent()) {
-      key += " (" + elements.homogeneousTypeToDisplay.get() + ")";
+    if (elements.getHomogeneousTypeToDisplay() != null) {
+      key += " (" + elements.getHomogeneousTypeToDisplay() + ")";
     }
     return key;
   }
@@ -669,7 +733,7 @@ public class IterableSubject extends Subject {
 
   private static boolean anyContainsCommaOrNewline(Iterable<Multiset.Entry<?>>... lists) {
     for (Multiset.Entry<?> entry : concat(lists)) {
-      String s = String.valueOf(entry.getElement());
+      String s = stringValueForFailure(entry.getElement());
       if (s.contains("\n") || s.contains(",")) {
         return true;
       }
@@ -702,32 +766,35 @@ public class IterableSubject extends Subject {
 
   /**
    * Whether to output each missing/unexpected item as its own {@link Fact} or to group all those
-   * items together into a single {@code Fact}.
+   * items together into a single {@link Fact}.
    */
   enum ElementFactGrouping {
     ALL_IN_ONE_FACT,
-    FACT_PER_ELEMENT;
+    FACT_PER_ELEMENT,
   }
 
-  /**
-   * Checks that an actual iterable contains none of the excluded objects or fails. (Duplicates are
-   * irrelevant to this test, which fails if any of the actual elements equal any of the excluded.)
-   */
+  /** Checks that the actual iterable contains none of the excluded objects. */
   public final void containsNoneOf(
-      @Nullable Object firstExcluded,
-      @Nullable Object secondExcluded,
-      @Nullable Object @Nullable ... restOfExcluded) {
-    containsNoneIn(accumulate(firstExcluded, secondExcluded, restOfExcluded));
+      @Nullable Object first, @Nullable Object second, @Nullable Object @Nullable ... rest) {
+    containsNoneIn(accumulate(first, second, rest));
   }
 
   /**
    * Checks that the actual iterable contains none of the elements contained in the excluded
-   * iterable or fails. (Duplicates are irrelevant to this test, which fails if any of the actual
-   * elements equal any of the excluded.)
+   * iterable.
    */
   public final void containsNoneIn(@Nullable Iterable<?> excluded) {
-    Collection<?> actual = iterableToCollection(checkNotNull(this.actual));
-    checkNotNull(excluded); // TODO(cpovirk): Produce a better exception message.
+    if (excluded == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because excluded iterable was null"),
+          actualContents());
+      return;
+    } else if (actual == null) {
+      failWithActual(
+          "expected an iterable that does not contain any of", annotateEmptyStrings(excluded));
+      return;
+    }
+    Collection<?> actual = iterableToCollection(this.actual);
     List<@Nullable Object> present = new ArrayList<>();
     for (Object item : Sets.newLinkedHashSet(excluded)) {
       if (actual.contains(item)) {
@@ -743,12 +810,16 @@ public class IterableSubject extends Subject {
   }
 
   /**
-   * Checks that the actual iterable contains none of the elements contained in the excluded array
-   * or fails. (Duplicates are irrelevant to this test, which fails if any of the actual elements
-   * equal any of the excluded.)
+   * Checks that the actual iterable contains none of the elements contained in the excluded array.
    */
   @SuppressWarnings("AvoidObjectArrays")
-  public final void containsNoneIn(@Nullable Object[] excluded) {
+  public final void containsNoneIn(@Nullable Object @Nullable [] excluded) {
+    if (excluded == null) {
+      failWithoutActual(
+          simpleFact("could not perform containment check because excluded array was null"),
+          actualContents());
+      return;
+    }
     containsNoneIn(asList(excluded));
   }
 
@@ -759,7 +830,7 @@ public class IterableSubject extends Subject {
   private static final Ordered ALREADY_FAILED = () -> {};
 
   /**
-   * Fails if the iterable is not strictly ordered, according to the natural ordering of its
+   * Checks that the actual iterable is strictly ordered, according to the natural ordering of its
    * elements. Strictly ordered means that each element in the iterable is <i>strictly</i> greater
    * than the element that preceded it.
    *
@@ -781,27 +852,31 @@ public class IterableSubject extends Subject {
   }
 
   /**
-   * Fails if the iterable is not strictly ordered, according to the given comparator. Strictly
-   * ordered means that each element in the iterable is <i>strictly</i> greater than the element
-   * that preceded it.
+   * Checks that the actual iterable is strictly ordered, according to the given comparator.
+   * Strictly ordered means that each element in the iterable is <i>strictly</i> greater than the
+   * element that preceded it.
    *
    * @throws ClassCastException if any pair of elements is not mutually Comparable
    */
   @SuppressWarnings({"unchecked"})
-  public final void isInStrictOrder(Comparator<?> comparator) {
-    checkNotNull(comparator);
+  public final void isInStrictOrder(@Nullable Comparator<?> comparator) {
+    if (comparator == null) {
+      failWithoutActual(
+          simpleFact("could not perform ordering check because comparator was null"),
+          actualContents());
+      return;
+    } else if (actual == null) {
+      failWithActual(simpleFact("expected an iterable that is in strict order"));
+      return;
+    }
     pairwiseCheck(
+        actual,
         "expected to be in strict order",
-        new PairwiseChecker() {
-          @Override
-          public boolean check(@Nullable Object prev, @Nullable Object next) {
-            return ((Comparator<@Nullable Object>) comparator).compare(prev, next) < 0;
-          }
-        });
+        (prev, next) -> ((Comparator<@Nullable Object>) comparator).compare(prev, next) < 0);
   }
 
   /**
-   * Fails if the iterable is not ordered, according to the natural ordering of its elements.
+   * Checks that the actual iterable is ordered, according to the natural ordering of its elements.
    * Ordered means that each element in the iterable is greater than or equal to the element that
    * preceded it.
    *
@@ -814,30 +889,34 @@ public class IterableSubject extends Subject {
   }
 
   /**
-   * Fails if the iterable is not ordered, according to the given comparator. Ordered means that
-   * each element in the iterable is greater than or equal to the element that preceded it.
+   * Checks that the actual iterable is ordered, according to the given comparator. Ordered means
+   * that each element in the iterable is greater than or equal to the element that preceded it.
    *
    * @throws ClassCastException if any pair of elements is not mutually Comparable
    */
   @SuppressWarnings({"unchecked"})
-  public final void isInOrder(Comparator<?> comparator) {
-    checkNotNull(comparator);
+  public final void isInOrder(@Nullable Comparator<?> comparator) {
+    if (comparator == null) {
+      failWithoutActual(
+          simpleFact("could not perform ordering check because comparator was null"),
+          actualContents());
+      return;
+    } else if (actual == null) {
+      failWithActual(simpleFact("expected an iterable that is in order"));
+      return;
+    }
     pairwiseCheck(
+        actual,
         "expected to be in order",
-        new PairwiseChecker() {
-          @Override
-          public boolean check(@Nullable Object prev, @Nullable Object next) {
-            return ((Comparator<@Nullable Object>) comparator).compare(prev, next) <= 0;
-          }
-        });
+        (prev, next) -> ((Comparator<@Nullable Object>) comparator).compare(prev, next) <= 0);
   }
 
   private interface PairwiseChecker {
     boolean check(@Nullable Object prev, @Nullable Object next);
   }
 
-  private void pairwiseCheck(String expectedFact, PairwiseChecker checker) {
-    Iterator<?> iterator = checkNotNull(actual).iterator();
+  private void pairwiseCheck(Iterable<?> actual, String expectedFact, PairwiseChecker checker) {
+    Iterator<?> iterator = actual.iterator();
     if (iterator.hasNext()) {
       Object prev = iterator.next();
       while (iterator.hasNext()) {
@@ -871,7 +950,10 @@ public class IterableSubject extends Subject {
   @Override
   @Deprecated
   public void isNotIn(@Nullable Iterable<?> iterable) {
-    checkNotNull(iterable);
+    if (iterable == null) {
+      super.isNotIn(null); // fails
+      return;
+    }
     if (Iterables.contains(iterable, actual)) {
       failWithActual("expected not to be any of", iterable);
     }
@@ -884,18 +966,12 @@ public class IterableSubject extends Subject {
     if (!nonIterables.isEmpty()) {
       failWithoutActual(
           simpleFact(
-              lenientFormat(
-                  "The actual value is an Iterable, and you've written a test that compares it to "
-                      + "some objects that are not Iterables. Did you instead mean to check "
-                      + "whether its *contents* match any of the *contents* of the given values? "
-                      + "If so, call containsNoneOf(...)/containsNoneIn(...) instead. "
-                      + "Non-iterables: %s",
-                  nonIterables)));
+              "The actual value is an Iterable, and you've written a test that compares it to "
+                  + "some objects that are not Iterables. Did you instead mean to check "
+                  + "whether its *contents* match any of the *contents* of the given values? "
+                  + "If so, call containsNoneOf(...)/containsNoneIn(...) instead."),
+          fact("non-iterables", nonIterables));
     }
-  }
-
-  private Fact fullContents() {
-    return fact("full contents", actualCustomStringRepresentationForPackageMembersToCall());
   }
 
   /**
@@ -923,7 +999,7 @@ public class IterableSubject extends Subject {
 
   /**
    * Starts a method chain for a check in which failure messages may use the given {@link
-   * DiffFormatter} to describe the difference between an actual elements (i.e. an element of the
+   * DiffFormatter} to describe the difference between an actual element (i.e. an element of the
    * {@link Iterable} under test) and the element it is expected to be equal to, but isn't. The
    * actual and expected elements must be of type {@code T}. The check is actually executed by
    * continuing the method chain. You may well want to use {@link
@@ -962,25 +1038,27 @@ public class IterableSubject extends Subject {
    * check.
    */
   public static class UsingCorrespondence<A extends @Nullable Object, E extends @Nullable Object> {
-
     private final IterableSubject subject;
     private final Correspondence<? super A, ? super E> correspondence;
-    private final Optional<Pairer> pairer;
+    private final @Nullable Pairer<A, E> pairer;
+    private final @Nullable Iterable<?> actual;
 
     UsingCorrespondence(
         IterableSubject subject, Correspondence<? super A, ? super E> correspondence) {
       this.subject = checkNotNull(subject);
       this.correspondence = checkNotNull(correspondence);
-      this.pairer = Optional.absent();
+      this.pairer = null;
+      this.actual = subject.actual;
     }
 
-    UsingCorrespondence(
+    private UsingCorrespondence(
         IterableSubject subject,
         Correspondence<? super A, ? super E> correspondence,
-        Pairer pairer) {
+        Pairer<A, E> pairer) {
       this.subject = checkNotNull(subject);
       this.correspondence = checkNotNull(correspondence);
-      this.pairer = Optional.of(pairer);
+      this.pairer = pairer;
+      this.actual = subject.actual;
     }
 
     /**
@@ -994,7 +1072,7 @@ public class IterableSubject extends Subject {
             + " containsExactlyElementsIn(expected) instead of equals(expected)?")
     @Deprecated
     @Override
-    public final boolean equals(@Nullable Object o) {
+    public final boolean equals(@Nullable Object other) {
       throw new UnsupportedOperationException(
           "UsingCorrespondence.equals() is not supported. Did you mean to call"
               + " containsExactlyElementsIn(expected) instead of equals(expected)?");
@@ -1110,12 +1188,12 @@ public class IterableSubject extends Subject {
     public UsingCorrespondence<A, E> displayingDiffsPairedBy(
         Function<? super A, ?> actualKeyFunction, Function<? super E, ?> expectedKeyFunction) {
       return new UsingCorrespondence<>(
-          subject, correspondence, new Pairer(actualKeyFunction, expectedKeyFunction));
+          subject, correspondence, Pairer.create(actualKeyFunction, expectedKeyFunction));
     }
 
     /**
-     * Checks that the subject contains at least one element that corresponds to the given expected
-     * element.
+     * Checks that the actual iterable contains at least one element that corresponds to the given
+     * expected element.
      */
     /*
      * TODO(cpovirk): Do we want @Nullable on usages of E? Probably not, since it could throw errors
@@ -1123,29 +1201,37 @@ public class IterableSubject extends Subject {
      * changes, also make them in MapSubject, MultimapSubject, and possibly others.
      */
     public void contains(E expected) {
+      if (actual == null) {
+        failWithActual(
+            factsBuilder()
+                .add(fact("expected an iterable that contains", expected))
+                .addAll(correspondence.describeForIterable())
+                .build());
+        return;
+      }
       Correspondence.ExceptionStore exceptions = Correspondence.ExceptionStore.forIterable();
-      for (A actual : getCastActual()) {
+      for (A actual : castActual(actual)) {
         if (correspondence.safeCompare(actual, expected, exceptions)) {
           // Found a match, but we still need to fail if we hit an exception along the way.
           if (exceptions.hasCompareException()) {
-            subject.failWithoutActual(
-                ImmutableList.<Fact>builder()
+            failWithoutActual(
+                factsBuilder()
                     .addAll(exceptions.describeAsMainCause())
                     .add(fact("expected to contain", expected))
                     .addAll(correspondence.describeForIterable())
                     .add(fact("found match (but failing because of exception)", actual))
-                    .add(subject.fullContents())
+                    .add(fullContents())
                     .build());
           }
           return;
         }
       }
       // Found no match. Fail, reporting elements that have the correct key if there are any.
-      if (pairer.isPresent()) {
-        List<A> keyMatches = pairer.get().pairOne(expected, getCastActual(), exceptions);
+      if (pairer != null) {
+        List<A> keyMatches = pairer.pairOne(expected, castActual(actual), exceptions);
         if (!keyMatches.isEmpty()) {
-          subject.failWithoutActual(
-              ImmutableList.<Fact>builder()
+          failWithoutActual(
+              factsBuilder()
                   .add(fact("expected to contain", expected))
                   .addAll(correspondence.describeForIterable())
                   .add(simpleFact("but did not"))
@@ -1156,59 +1242,67 @@ public class IterableSubject extends Subject {
                           keyMatches,
                           exceptions))
                   .add(simpleFact("---"))
-                  .add(subject.fullContents())
+                  .add(fullContents())
                   .addAll(exceptions.describeAsAdditionalInfo())
                   .build());
           return;
         }
       }
-      subject.failWithoutActual(
-          ImmutableList.<Fact>builder()
+      failWithoutActual(
+          factsBuilder()
               .add(fact("expected to contain", expected))
               .addAll(correspondence.describeForIterable())
-              .add(subject.butWas())
+              .add(butWas())
               .addAll(exceptions.describeAsAdditionalInfo())
               .build());
     }
 
     /** Checks that none of the actual elements correspond to the given element. */
-    public void doesNotContain(E excluded) {
+    public void doesNotContain(E element) {
+      if (actual == null) {
+        failWithActual(
+            factsBuilder()
+                .add(fact("expected an iterable that does not contain", element))
+                .addAll(correspondence.describeForIterable())
+                .build());
+        return;
+      }
       Correspondence.ExceptionStore exceptions = Correspondence.ExceptionStore.forIterable();
       List<A> matchingElements = new ArrayList<>();
-      for (A actual : getCastActual()) {
-        if (correspondence.safeCompare(actual, excluded, exceptions)) {
+      for (A actual : castActual(actual)) {
+        if (correspondence.safeCompare(actual, element, exceptions)) {
           matchingElements.add(actual);
         }
       }
       // Fail if we found any matches.
       if (!matchingElements.isEmpty()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
-                .add(fact("expected not to contain", excluded))
+        failWithoutActual(
+            factsBuilder()
+                .add(fact("expected not to contain", element))
                 .addAll(correspondence.describeForIterable())
                 .add(fact("but contained", countDuplicates(matchingElements)))
-                .add(subject.fullContents())
+                .add(fullContents())
                 .addAll(exceptions.describeAsAdditionalInfo())
                 .build());
         return;
       }
       // Found no match, but we still need to fail if we hit an exception along the way.
       if (exceptions.hasCompareException()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .addAll(exceptions.describeAsMainCause())
-                .add(fact("expected not to contain", excluded))
+                .add(fact("expected not to contain", element))
                 .addAll(correspondence.describeForIterable())
                 .add(simpleFact("found no match (but failing because of exception)"))
-                .add(subject.fullContents())
+                .add(fullContents())
                 .build());
       }
     }
 
     /**
-     * Checks that subject contains exactly elements that correspond to the expected elements, i.e.
-     * that there is a 1:1 mapping between the actual elements and the expected elements where each
-     * pair of elements correspond.
+     * Checks that actual iterable contains exactly elements that correspond to the expected
+     * elements, i.e. that there is a 1:1 mapping between the actual elements and the expected
+     * elements where each pair of elements correspond.
      *
      * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
      * on the object returned by this method.
@@ -1220,22 +1314,31 @@ public class IterableSubject extends Subject {
     @SafeVarargs
     @CanIgnoreReturnValue
     public final Ordered containsExactly(@Nullable E @Nullable ... expected) {
-      return containsExactlyElementsIn(
-          (expected == null) ? newArrayList((E) null) : asList(expected));
+      return containsExactlyElementsIn(SubjectUtils.<E>listifyNullableVarargs(expected));
     }
 
     /**
-     * Checks that subject contains exactly elements that correspond to the expected elements, i.e.
-     * that there is a 1:1 mapping between the actual elements and the expected elements where each
-     * pair of elements correspond.
+     * Checks that actual iterable contains exactly elements that correspond to the expected
+     * elements, i.e. that there is a 1:1 mapping between the actual elements and the expected
+     * elements where each pair of elements correspond.
      *
      * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
      * on the object returned by this method.
      */
     @CanIgnoreReturnValue
     public Ordered containsExactlyElementsIn(@Nullable Iterable<? extends E> expected) {
-      List<A> actualList = iterableToList(getCastActual());
-      List<? extends E> expectedList = iterableToList(checkNotNull(expected));
+      if (expected == null) {
+        failWithoutActual(
+            simpleFact("could not perform containment check because expected iterable was null"),
+            actualContents());
+        return ALREADY_FAILED;
+      } else if (actual == null) {
+        failWithActual("expected an iterable that contains exactly", expected);
+        return ALREADY_FAILED;
+      }
+
+      List<A> actualList = iterableToList(castActual(actual));
+      List<? extends E> expectedList = iterableToList(expected);
 
       if (expectedList.isEmpty()) {
         if (actualList.isEmpty()) {
@@ -1276,35 +1379,31 @@ public class IterableSubject extends Subject {
       // messages are normally more useful (e.g. reporting that the actual iterable contained an
       // unexpected null) but we are contractually obliged to throw here if the assertions passed.
       if (exceptions.hasCompareException()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .addAll(exceptions.describeAsMainCause())
                 .add(fact("expected", expected))
                 .addAll(correspondence.describeForIterable())
                 .add(simpleFact("found all expected elements (but failing because of exception)"))
-                .add(subject.fullContents())
+                .add(fullContents())
                 .build());
         return ALREADY_FAILED;
       }
       // The 1:1 mapping is complete, so the test succeeds (but we know from above that the mapping
       // is not in order).
-      return new Ordered() {
-        @Override
-        public void inOrder() {
-          subject.failWithActual(
-              ImmutableList.<Fact>builder()
+      return () ->
+          failWithActual(
+              factsBuilder()
                   .add(simpleFact("contents match, but order was wrong"))
                   .add(fact("expected", expected))
                   .addAll(correspondence.describeForIterable())
                   .build());
-        }
-      };
     }
 
     /**
-     * Checks that subject contains exactly elements that correspond to the expected elements, i.e.
-     * that there is a 1:1 mapping between the actual elements and the expected elements where each
-     * pair of elements correspond.
+     * Checks that actual iterable contains exactly elements that correspond to the expected
+     * elements, i.e. that there is a 1:1 mapping between the actual elements and the expected
+     * elements where each pair of elements correspond.
      *
      * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
      * on the object returned by this method.
@@ -1312,7 +1411,13 @@ public class IterableSubject extends Subject {
     @CanIgnoreReturnValue
     @SuppressWarnings("AvoidObjectArrays")
     public Ordered containsExactlyElementsIn(E @Nullable [] expected) {
-      return containsExactlyElementsIn(asList(checkNotNull(expected)));
+      if (expected == null) {
+        failWithoutActual(
+            simpleFact("could not perform containment check because expected array was null"),
+            actualContents());
+        return ALREADY_FAILED;
+      }
+      return containsExactlyElementsIn(asList(expected));
     }
 
     /**
@@ -1374,12 +1479,12 @@ public class IterableSubject extends Subject {
       List<? extends A> extra = findNotIndexed(actual, mapping.keySet());
       List<? extends E> missing = findNotIndexed(expected, mapping.inverse().keySet());
       if (!missing.isEmpty() || !extra.isEmpty()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .addAll(describeMissingOrExtra(missing, extra, exceptions))
                 .add(fact("expected", expected))
                 .addAll(correspondence.describeForIterable())
-                .add(subject.butWas())
+                .add(butWas())
                 .addAll(exceptions.describeAsAdditionalInfo())
                 .build());
         return true;
@@ -1396,12 +1501,12 @@ public class IterableSubject extends Subject {
         List<? extends E> missing,
         List<? extends A> extra,
         Correspondence.ExceptionStore exceptions) {
-      if (pairer.isPresent()) {
-        Pairing pairing = pairer.get().pair(missing, extra, exceptions);
+      if (pairer != null) {
+        Pairing<A, E> pairing = pairer.pair(missing, extra, exceptions);
         if (pairing != null) {
           return describeMissingOrExtraWithPairing(pairing, exceptions);
         } else {
-          return ImmutableList.<Fact>builder()
+          return factsBuilder()
               .addAll(describeMissingOrExtraWithoutPairing(missing, extra))
               .add(
                   simpleFact(
@@ -1409,8 +1514,8 @@ public class IterableSubject extends Subject {
                           + " provided and has consequently been ignored"))
               .build();
         }
-      } else if (missing.size() == 1 && extra.size() >= 1) {
-        return ImmutableList.<Fact>builder()
+      } else if (missing.size() == 1 && !extra.isEmpty()) {
+        return factsBuilder()
             .add(fact("missing (1)", missing.get(0)))
             .addAll(formatExtras("unexpected", missing.get(0), extra, exceptions))
             .add(simpleFact("---"))
@@ -1426,8 +1531,8 @@ public class IterableSubject extends Subject {
     }
 
     private ImmutableList<Fact> describeMissingOrExtraWithPairing(
-        Pairing pairing, Correspondence.ExceptionStore exceptions) {
-      ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+        Pairing<A, E> pairing, Correspondence.ExceptionStore exceptions) {
+      ImmutableList.Builder<Fact> facts = factsBuilder();
       for (Object key : pairing.pairedKeysToExpectedValues.keySet()) {
         E missing = pairing.pairedKeysToExpectedValues.get(key);
         List<A> extras = pairing.pairedKeysToActualValues.get(key);
@@ -1461,7 +1566,7 @@ public class IterableSubject extends Subject {
         }
       }
       if (hasDiffs) {
-        ImmutableList.Builder<Fact> extraFacts = ImmutableList.builder();
+        ImmutableList.Builder<Fact> extraFacts = factsBuilder();
         extraFacts.add(simpleFact(lenientFormat("%s (%s)", label, extras.size())));
         for (int i = 0; i < extras.size(); i++) {
           A extra = extras.get(i);
@@ -1481,14 +1586,14 @@ public class IterableSubject extends Subject {
      * Returns all the elements of the given list other than those with the given indexes. Assumes
      * that all the given indexes really are valid indexes into the list.
      */
-    private <T extends @Nullable Object> List<T> findNotIndexed(
+    private static <T extends @Nullable Object> List<T> findNotIndexed(
         List<T> list, Set<Integer> indexes) {
       if (indexes.size() == list.size()) {
         // If there are as many distinct valid indexes are there are elements in the list then every
         // index must be in there once.
         return asList();
       }
-      List<T> notIndexed = newArrayList();
+      List<T> notIndexed = new ArrayList<>();
       for (int index = 0; index < list.size(); index++) {
         if (!indexes.contains(index)) {
           notIndexed.add(list.get(index));
@@ -1505,7 +1610,7 @@ public class IterableSubject extends Subject {
      * there are multiple possible output mappings tying for the largest possible, this returns an
      * arbitrary one.
      */
-    private ImmutableBiMap<Integer, Integer> findMaximalOneToOneMapping(
+    private static ImmutableBiMap<Integer, Integer> findMaximalOneToOneMapping(
         ImmutableMultimap<Integer, Integer> edges) {
       /*
        * Finding this 1:1 mapping is analogous to finding a maximum cardinality bipartite matching
@@ -1538,8 +1643,8 @@ public class IterableSubject extends Subject {
       List<? extends A> extra = findNotIndexed(actual, mapping.keySet());
       List<? extends E> missing = findNotIndexed(expected, mapping.values());
       if (!missing.isEmpty() || !extra.isEmpty()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .add(
                     simpleFact(
                         "in an assertion requiring a 1:1 mapping between the expected and the"
@@ -1552,7 +1657,7 @@ public class IterableSubject extends Subject {
                 .addAll(describeMissingOrExtra(missing, extra, exceptions))
                 .add(fact("expected", expected))
                 .addAll(correspondence.describeForIterable())
-                .add(subject.butWas())
+                .add(butWas())
                 .addAll(exceptions.describeAsAdditionalInfo())
                 .build());
         return true;
@@ -1561,13 +1666,13 @@ public class IterableSubject extends Subject {
     }
 
     /**
-     * Checks that the subject contains elements that correspond to all the expected elements, i.e.
-     * that there is a 1:1 mapping between any subset of the actual elements and the expected
-     * elements where each pair of elements correspond.
+     * Checks that the actual iterable contains elements that correspond to all the expected
+     * elements, i.e. that there is a 1:1 mapping between any subset of the actual elements and the
+     * expected elements where each pair of elements correspond.
      *
      * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
      * on the object returned by this method. The elements must appear in the given order within the
-     * subject, but they are not required to be consecutive.
+     * actual iterable, but they are not required to be consecutive.
      */
     @SafeVarargs
     @CanIgnoreReturnValue
@@ -1576,17 +1681,25 @@ public class IterableSubject extends Subject {
     }
 
     /**
-     * Checks that the subject contains elements that correspond to all the expected elements, i.e.
-     * that there is a 1:1 mapping between any subset of the actual elements and the expected
-     * elements where each pair of elements correspond.
+     * Checks that the actual iterable contains elements that correspond to all the expected
+     * elements, i.e. that there is a 1:1 mapping between any subset of the actual elements and the
+     * expected elements where each pair of elements correspond.
      *
      * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
      * on the object returned by this method. The elements must appear in the given order within the
-     * subject, but they are not required to be consecutive.
+     * actual iterable, but they are not required to be consecutive.
      */
     @CanIgnoreReturnValue
     public Ordered containsAtLeastElementsIn(Iterable<? extends E> expected) {
-      List<A> actualList = iterableToList(getCastActual());
+      if (actual == null) {
+        failWithActual(
+            factsBuilder()
+                .add(fact("expected an iterable that contains at least", expected))
+                .addAll(correspondence.describeForIterable())
+                .build());
+        return ALREADY_FAILED;
+      }
+      List<A> actualList = iterableToList(castActual(actual));
       List<? extends E> expectedList = iterableToList(expected);
       // Check if the expected elements correspond in order to any subset of the actual elements.
       // This allows the common case of a passing test using inOrder() to complete in linear time.
@@ -1616,43 +1729,45 @@ public class IterableSubject extends Subject {
       // was returned before this, but we are contractually obliged to throw here if the assertions
       // passed.
       if (exceptions.hasCompareException()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .addAll(exceptions.describeAsMainCause())
                 .add(fact("expected to contain at least", expected))
                 .addAll(correspondence.describeForIterable())
                 .add(simpleFact("found all expected elements (but failing because of exception)"))
-                .add(subject.fullContents())
+                .add(fullContents())
                 .build());
         return ALREADY_FAILED;
       }
       // The 1:1 mapping maps all the expected elements, so the test succeeds (but we know from
       // above that the mapping is not in order).
-      return new Ordered() {
-        @Override
-        public void inOrder() {
-          subject.failWithActual(
-              ImmutableList.<Fact>builder()
+      return () ->
+          failWithActual(
+              factsBuilder()
                   .add(simpleFact("required elements were all found, but order was wrong"))
                   .add(fact("expected order for required elements", expected))
                   .addAll(correspondence.describeForIterable())
                   .build());
-        }
-      };
     }
 
     /**
-     * Checks that the subject contains elements that correspond to all the expected elements, i.e.
-     * that there is a 1:1 mapping between any subset of the actual elements and the expected
-     * elements where each pair of elements correspond.
+     * Checks that the actual iterable contains elements that correspond to all the expected
+     * elements, i.e. that there is a 1:1 mapping between any subset of the actual elements and the
+     * expected elements where each pair of elements correspond.
      *
      * <p>To also test that the contents appear in the given order, make a call to {@code inOrder()}
      * on the object returned by this method. The elements must appear in the given order within the
-     * subject, but they are not required to be consecutive.
+     * actual iterable, but they are not required to be consecutive.
      */
     @CanIgnoreReturnValue
     @SuppressWarnings("AvoidObjectArrays")
-    public Ordered containsAtLeastElementsIn(E[] expected) {
+    public Ordered containsAtLeastElementsIn(E @Nullable [] expected) {
+      if (expected == null) {
+        failWithoutActual(
+            simpleFact("could not perform containment check because expected array was null"),
+            actualContents());
+        return ALREADY_FAILED;
+      }
       return containsAtLeastElementsIn(asList(expected));
     }
 
@@ -1699,7 +1814,7 @@ public class IterableSubject extends Subject {
 
     /**
      * Given a list of actual elements, a list of expected elements, and a many:many mapping between
-     * actual and expected elements specified as a multimap of indexes into an actual list to
+     * actual and expected elements specified as a multimap of indexes into the actual list to
      * indexes into the expected list, checks that every expected element maps to at least one
      * actual element, and fails if this is not the case. Actual elements which do not map to any
      * expected elements are ignored.
@@ -1712,12 +1827,12 @@ public class IterableSubject extends Subject {
       List<? extends E> missing = findNotIndexed(expected, mapping.inverse().keySet());
       if (!missing.isEmpty()) {
         List<? extends A> extra = findNotIndexed(actual, mapping.keySet());
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .addAll(describeMissing(missing, extra, exceptions))
                 .add(fact("expected to contain at least", expected))
                 .addAll(correspondence.describeForIterable())
-                .add(subject.butWas())
+                .add(butWas())
                 .addAll(exceptions.describeAsAdditionalInfo())
                 .build());
         return true;
@@ -1734,12 +1849,12 @@ public class IterableSubject extends Subject {
         List<? extends E> missing,
         List<? extends A> extra,
         Correspondence.ExceptionStore exceptions) {
-      if (pairer.isPresent()) {
-        Pairing pairing = pairer.get().pair(missing, extra, exceptions);
+      if (pairer != null) {
+        Pairing<A, E> pairing = pairer.pair(missing, extra, exceptions);
         if (pairing != null) {
           return describeMissingWithPairing(pairing, exceptions);
         } else {
-          return ImmutableList.<Fact>builder()
+          return factsBuilder()
               .addAll(describeMissingWithoutPairing(missing))
               .add(
                   simpleFact(
@@ -1761,8 +1876,8 @@ public class IterableSubject extends Subject {
     }
 
     private ImmutableList<Fact> describeMissingWithPairing(
-        Pairing pairing, Correspondence.ExceptionStore exceptions) {
-      ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+        Pairing<A, E> pairing, Correspondence.ExceptionStore exceptions) {
+      ImmutableList.Builder<Fact> facts = factsBuilder();
       for (Object key : pairing.pairedKeysToExpectedValues.keySet()) {
         E missing = pairing.pairedKeysToExpectedValues.get(key);
         List<A> extras = pairing.pairedKeysToActualValues.get(key);
@@ -1781,9 +1896,9 @@ public class IterableSubject extends Subject {
 
     /**
      * Given a list of expected elements, and a 1:1 mapping between actual and expected elements
-     * specified as a bimap of indexes into an actual list to indexes into the expected list, checks
-     * that every expected element maps to an actual element. Actual elements which do not map to
-     * any expected elements are ignored.
+     * specified as a bimap of indexes into the actual list to indexes into the expected list,
+     * checks that every expected element maps to an actual element. Actual elements which do not
+     * map to any expected elements are ignored.
      */
     private boolean failIfOneToOneMappingHasMissing(
         List<? extends A> actual,
@@ -1793,8 +1908,8 @@ public class IterableSubject extends Subject {
       List<? extends E> missing = findNotIndexed(expected, mapping.values());
       if (!missing.isEmpty()) {
         List<? extends A> extra = findNotIndexed(actual, mapping.keySet());
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .add(
                     simpleFact(
                         "in an assertion requiring a 1:1 mapping between the expected and a subset"
@@ -1807,7 +1922,7 @@ public class IterableSubject extends Subject {
                 .addAll(describeMissing(missing, extra, exceptions))
                 .add(fact("expected to contain at least", expected))
                 .addAll(correspondence.describeForIterable())
-                .add(subject.butWas())
+                .add(butWas())
                 .addAll(exceptions.describeAsAdditionalInfo())
                 .build());
         return true;
@@ -1816,8 +1931,8 @@ public class IterableSubject extends Subject {
     }
 
     /**
-     * Checks that the subject contains at least one element that corresponds to at least one of the
-     * expected elements.
+     * Checks that the actual iterable contains at least one element that corresponds to at least
+     * one of the expected elements.
      */
     @SafeVarargs
     public final void containsAnyOf(E first, E second, E @Nullable ... rest) {
@@ -1825,24 +1940,32 @@ public class IterableSubject extends Subject {
     }
 
     /**
-     * Checks that the subject contains at least one element that corresponds to at least one of the
-     * expected elements.
+     * Checks that the actual iterable contains at least one element that corresponds to at least
+     * one of the expected elements.
      */
     public void containsAnyIn(Iterable<? extends E> expected) {
-      Collection<A> actual = iterableToCollection(getCastActual());
+      if (actual == null) {
+        failWithActual(
+            factsBuilder()
+                .add(fact("expected an iterable that contains any of", expected))
+                .addAll(correspondence.describeForIterable())
+                .build());
+        return;
+      }
+      Collection<A> actual = iterableToCollection(castActual(this.actual));
       Correspondence.ExceptionStore exceptions = Correspondence.ExceptionStore.forIterable();
       for (E expectedItem : expected) {
         for (A actualItem : actual) {
           if (correspondence.safeCompare(actualItem, expectedItem, exceptions)) {
             // Found a match, but we still need to fail if we hit an exception along the way.
             if (exceptions.hasCompareException()) {
-              subject.failWithoutActual(
-                  ImmutableList.<Fact>builder()
+              failWithoutActual(
+                  factsBuilder()
                       .addAll(exceptions.describeAsMainCause())
                       .add(fact("expected to contain any of", expected))
                       .addAll(correspondence.describeForIterable())
                       .add(simpleFact("found match (but failing because of exception)"))
-                      .add(subject.fullContents())
+                      .add(fullContents())
                       .build());
             }
             return;
@@ -1850,35 +1973,35 @@ public class IterableSubject extends Subject {
         }
       }
       // Found no match. Fail, reporting elements that have a correct key if there are any.
-      if (pairer.isPresent()) {
-        Pairing pairing =
-            pairer.get().pair(iterableToList(expected), iterableToList(actual), exceptions);
+      if (pairer != null) {
+        Pairing<A, E> pairing =
+            pairer.pair(iterableToList(expected), iterableToList(actual), exceptions);
         if (pairing != null) {
           if (!pairing.pairedKeysToExpectedValues.isEmpty()) {
-            subject.failWithoutActual(
-                ImmutableList.<Fact>builder()
+            failWithoutActual(
+                factsBuilder()
                     .add(fact("expected to contain any of", expected))
                     .addAll(correspondence.describeForIterable())
-                    .add(subject.butWas())
+                    .add(butWas())
                     .addAll(describeAnyMatchesByKey(pairing, exceptions))
                     .addAll(exceptions.describeAsAdditionalInfo())
                     .build());
           } else {
-            subject.failWithoutActual(
-                ImmutableList.<Fact>builder()
+            failWithoutActual(
+                factsBuilder()
                     .add(fact("expected to contain any of", expected))
                     .addAll(correspondence.describeForIterable())
-                    .add(subject.butWas())
+                    .add(butWas())
                     .add(simpleFact("it does not contain any matches by key, either"))
                     .addAll(exceptions.describeAsAdditionalInfo())
                     .build());
           }
         } else {
-          subject.failWithoutActual(
-              ImmutableList.<Fact>builder()
+          failWithoutActual(
+              factsBuilder()
                   .add(fact("expected to contain any of", expected))
                   .addAll(correspondence.describeForIterable())
-                  .add(subject.butWas())
+                  .add(butWas())
                   .add(
                       simpleFact(
                           "a key function which does not uniquely key the expected elements was"
@@ -1887,28 +2010,34 @@ public class IterableSubject extends Subject {
                   .build());
         }
       } else {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .add(fact("expected to contain any of", expected))
                 .addAll(correspondence.describeForIterable())
-                .add(subject.butWas())
+                .add(butWas())
                 .addAll(exceptions.describeAsAdditionalInfo())
                 .build());
       }
     }
 
     /**
-     * Checks that the subject contains at least one element that corresponds to at least one of the
-     * expected elements.
+     * Checks that the actual iterable contains at least one element that corresponds to at least
+     * one of the expected elements.
      */
     @SuppressWarnings("AvoidObjectArrays")
-    public void containsAnyIn(E[] expected) {
+    public void containsAnyIn(E @Nullable [] expected) {
+      if (expected == null) {
+        failWithoutActual(
+            simpleFact("could not perform containment check because expected array was null"),
+            actualContents());
+        return;
+      }
       containsAnyIn(asList(expected));
     }
 
     private ImmutableList<Fact> describeAnyMatchesByKey(
-        Pairing pairing, Correspondence.ExceptionStore exceptions) {
-      ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+        Pairing<A, E> pairing, Correspondence.ExceptionStore exceptions) {
+      ImmutableList.Builder<Fact> facts = factsBuilder();
       for (Object key : pairing.pairedKeysToExpectedValues.keySet()) {
         E expected = pairing.pairedKeysToExpectedValues.get(key);
         List<A> got = pairing.pairedKeysToActualValues.get(key);
@@ -1921,23 +2050,29 @@ public class IterableSubject extends Subject {
     }
 
     /**
-     * Checks that the subject contains no elements that correspond to any of the given elements.
-     * (Duplicates are irrelevant to this test, which fails if any of the subject elements
-     * correspond to any of the given elements.)
+     * Checks that the actual iterable contains no elements that correspond to any of the given
+     * elements.
      */
     @SafeVarargs
-    public final void containsNoneOf(
-        E firstExcluded, E secondExcluded, E @Nullable ... restOfExcluded) {
-      containsNoneIn(accumulate(firstExcluded, secondExcluded, restOfExcluded));
+    public final void containsNoneOf(E first, E second, E @Nullable ... rest) {
+      containsNoneIn(accumulate(first, second, rest));
     }
 
     /**
-     * Checks that the subject contains no elements that correspond to any of the given elements.
-     * (Duplicates are irrelevant to this test, which fails if any of the subject elements
-     * correspond to any of the given elements.)
+     * Checks that the actual iterable contains no elements that correspond to any of the given
+     * elements.
      */
+    @SuppressWarnings("nullness") // TODO: b/423853632 - Remove after checker is fixed.
     public void containsNoneIn(Iterable<? extends E> excluded) {
-      Collection<A> actual = iterableToCollection(getCastActual());
+      if (actual == null) {
+        failWithActual(
+            factsBuilder()
+                .add(fact("expected an iterable that does not contain any of", excluded))
+                .addAll(correspondence.describeForIterable())
+                .build());
+        return;
+      }
+      Collection<A> actual = iterableToCollection(castActual(this.actual));
       ListMultimap<E, A> present = LinkedListMultimap.create();
       Correspondence.ExceptionStore exceptions = Correspondence.ExceptionStore.forIterable();
       for (E excludedItem : Sets.newLinkedHashSet(excluded)) {
@@ -1949,7 +2084,7 @@ public class IterableSubject extends Subject {
       }
       // Fail if we found any matches.
       if (!present.isEmpty()) {
-        ImmutableList.Builder<Fact> facts = ImmutableList.builder();
+        ImmutableList.Builder<Fact> facts = factsBuilder();
         facts.add(fact("expected not to contain any of", annotateEmptyStrings(excluded)));
         facts.addAll(correspondence.describeForIterable());
         for (E excludedItem : present.keySet()) {
@@ -1958,38 +2093,42 @@ public class IterableSubject extends Subject {
           facts.add(fact("corresponding to", excludedItem));
           facts.add(simpleFact("---"));
         }
-        facts.add(subject.fullContents());
+        facts.add(fullContents());
         facts.addAll(exceptions.describeAsAdditionalInfo());
-        subject.failWithoutActual(facts.build());
+        failWithoutActual(facts.build());
 
         return;
       }
       // Found no match, but we still need to fail if we hit an exception along the way.
       if (exceptions.hasCompareException()) {
-        subject.failWithoutActual(
-            ImmutableList.<Fact>builder()
+        failWithoutActual(
+            factsBuilder()
                 .addAll(exceptions.describeAsMainCause())
                 .add(fact("expected not to contain any of", annotateEmptyStrings(excluded)))
                 .addAll(correspondence.describeForIterable())
                 .add(simpleFact("found no matches (but failing because of exception)"))
-                .add(subject.fullContents())
+                .add(fullContents())
                 .build());
       }
     }
 
     /**
      * Checks that the subject contains no elements that correspond to any of the given elements.
-     * (Duplicates are irrelevant to this test, which fails if any of the subject elements
-     * correspond to any of the given elements.)
      */
     @SuppressWarnings("AvoidObjectArrays")
-    public void containsNoneIn(E[] excluded) {
+    public void containsNoneIn(E @Nullable [] excluded) {
+      if (excluded == null) {
+        failWithoutActual(
+            simpleFact("could not perform containment check because excluded array was null"),
+            actualContents());
+        return;
+      }
       containsNoneIn(asList(excluded));
     }
 
     @SuppressWarnings("unchecked") // throwing ClassCastException is the correct behaviour
-    private Iterable<A> getCastActual() {
-      return (Iterable<A>) checkNotNull(subject.actual);
+    private Iterable<A> castActual(Iterable<?> actual) {
+      return (Iterable<A>) actual;
     }
 
     // TODO(b/69154276): Consider commoning up some of the logic between IterableSubject.Pairer,
@@ -2003,12 +2142,12 @@ public class IterableSubject extends Subject {
      * A class which knows how to pair the actual and expected elements (see {@link
      * #displayingDiffsPairedBy}).
      */
-    private final class Pairer {
-
+    private static final class Pairer<A extends @Nullable Object, E extends @Nullable Object> {
       private final Function<? super A, ?> actualKeyFunction;
       private final Function<? super E, ?> expectedKeyFunction;
 
-      Pairer(Function<? super A, ?> actualKeyFunction, Function<? super E, ?> expectedKeyFunction) {
+      private Pairer(
+          Function<? super A, ?> actualKeyFunction, Function<? super E, ?> expectedKeyFunction) {
         this.actualKeyFunction = actualKeyFunction;
         this.expectedKeyFunction = expectedKeyFunction;
       }
@@ -2017,11 +2156,11 @@ public class IterableSubject extends Subject {
        * Returns a {@link Pairing} of the given expected and actual values, or {@code null} if the
        * expected values are not uniquely keyed.
        */
-      @Nullable Pairing pair(
+      @Nullable Pairing<A, E> pair(
           List<? extends E> expectedValues,
           List<? extends A> actualValues,
           Correspondence.ExceptionStore exceptions) {
-        Pairing pairing = new Pairing();
+        Pairing<A, E> pairing = Pairing.create();
 
         // Populate expectedKeys with the keys of the corresponding elements of expectedValues.
         // We do this ahead of time to avoid invoking the key function twice for each element.
@@ -2102,11 +2241,15 @@ public class IterableSubject extends Subject {
           return null;
         }
       }
+
+      static <A extends @Nullable Object, E extends @Nullable Object> Pairer<A, E> create(
+          Function<? super A, ?> actualKeyFunction, Function<? super E, ?> expectedKeyFunction) {
+        return new Pairer<>(actualKeyFunction, expectedKeyFunction);
+      }
     }
 
     /** A description of a pairing between expected and actual values. N.B. This is mutable. */
-    private final class Pairing {
-
+    private static final class Pairing<A extends @Nullable Object, E extends @Nullable Object> {
       /**
        * Map from keys used in the pairing to the expected value with that key. Iterates in the
        * order the expected values appear in the input. Will never contain null keys.
@@ -2124,13 +2267,59 @@ public class IterableSubject extends Subject {
        * List of the expected values not used in the pairing. Iterates in the order they appear in
        * the input.
        */
-      private final List<E> unpairedExpectedValues = newArrayList();
+      private final List<E> unpairedExpectedValues = new ArrayList<>();
 
       /**
        * List of the actual values not used in the pairing. Iterates in the order they appear in the
        * input.
        */
-      private final List<A> unpairedActualValues = newArrayList();
+      private final List<A> unpairedActualValues = new ArrayList<>();
+
+      private Pairing() {}
+
+      static <A extends @Nullable Object, E extends @Nullable Object> Pairing<A, E> create() {
+        return new Pairing<>();
+      }
     }
+
+    private Fact actualContents() {
+      return subject.actualContents();
+    }
+
+    private Fact butWas() {
+      return subject.butWas();
+    }
+
+    private void failWithActual(Iterable<Fact> facts) {
+      subject.failWithActual(facts);
+    }
+
+    private void failWithActual(String key, @Nullable Object value) {
+      subject.failWithActual(key, value);
+    }
+
+    private void failWithoutActual(Iterable<Fact> facts) {
+      subject.failWithoutActual(facts);
+    }
+
+    private void failWithoutActual(Fact first, Fact... rest) {
+      subject.failWithoutActual(first, rest);
+    }
+
+    private Fact fullContents() {
+      return subject.fullContents();
+    }
+  }
+
+  private Fact fullContents() {
+    return actualValue("full contents");
+  }
+
+  private Fact actualContents() {
+    return actualValue("actual contents");
+  }
+
+  static Factory<IterableSubject, Iterable<?>> iterables() {
+    return IterableSubject::new;
   }
 }
