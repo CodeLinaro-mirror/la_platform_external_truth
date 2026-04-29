@@ -25,8 +25,6 @@ import static com.google.common.truth.Expect.TestPhase.BEFORE;
 import static com.google.common.truth.Expect.TestPhase.DURING;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.base.Throwables;
-import com.google.common.truth.Truth.SimpleAssertionError;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,9 +69,9 @@ import org.junit.runners.model.Statement;
  *       safety, multithreaded tests should check for such exceptions regardless of whether they use
  *       {@code Expect}. (Typically, this means calling {@code get()} on any {@code Future} returned
  *       by a method like {@code executor.submit(...)}. It might also include checking for
- *       unexpected log messages
- *       or reading metrics that count failures.) If your tests already check for exceptions from a
- *       thread, then that will cover any exception from plain {@code assertThat}.
+ *       unexpected log messages or reading metrics that count failures.) If your tests already
+ *       check for exceptions from a thread, then that will cover any exception from plain {@code
+ *       assertThat}.
  * </ul>
  *
  * <p>To record failures for the purpose of testing that an assertion fails when it should, see
@@ -162,18 +160,18 @@ public final class Expect extends StandardSubjectBuilder implements TestRule {
       return message.toString();
     }
 
-    // String.repeat is not available under Java 8 and old versions of Android.
+    // String.repeat is not available under Java 8.
     @SuppressWarnings({"StringsRepeat", "InlineMeInliner"})
     private static void appendIndented(int countLength, StringBuilder builder, String toAppend) {
       int indent = countLength + 4; // "  " and ". "
       builder.append(toAppend.replace("\n", "\n" + repeat(" ", indent)));
     }
 
-    private String printSubsequentFailure(
+    private static String printSubsequentFailure(
         StackTraceElement[] baseTraceFrames, AssertionError toPrint) {
       Exception e = new RuntimeException("__EXCEPTION_MARKER__", toPrint);
       e.setStackTrace(baseTraceFrames);
-      String s = Throwables.getStackTraceAsString(e);
+      String s = getStackTraceAsString(e);
       // Force single line reluctant matching
       return s.replaceFirst("(?s)^.*?__EXCEPTION_MARKER__.*?Caused by:\\s+", "");
     }
@@ -183,12 +181,12 @@ public final class Expect extends StandardSubjectBuilder implements TestRule {
       switch (inRuleContext) {
         case BEFORE:
           throw new IllegalStateException(
-              "assertion made on Expect instance, but it's not enabled as a @Rule.", failure);
+              "Assertion made on Expect instance, but it's not enabled as a @Rule.", failure);
         case DURING:
           return;
         case AFTER:
           throw new IllegalStateException(
-              "assertion made on Expect instance, but its @Rule has already completed. Maybe "
+              "Assertion made on Expect instance, but its @Rule has already completed. Maybe "
                   + "you're making assertions from a background thread and not waiting for them to "
                   + "complete, or maybe you've shared an Expect instance across multiple tests? "
                   + "We're throwing this exception to warn you that your assertion would have been "
@@ -203,7 +201,7 @@ public final class Expect extends StandardSubjectBuilder implements TestRule {
     @GuardedBy("this")
     private void doLeaveRuleContext() {
       if (hasFailures()) {
-        throw SimpleAssertionError.createWithNoStack(this.toString());
+        throw AssertionErrorWithFacts.createWithoutFactsOrStack(toString());
       }
     }
 
@@ -214,8 +212,8 @@ public final class Expect extends StandardSubjectBuilder implements TestRule {
             caught instanceof AssumptionViolatedException
                 ? "Also, after those failures, an assumption was violated:"
                 : "Also, after those failures, an exception was thrown:";
-        record(SimpleAssertionError.createWithNoStack(message, caught));
-        throw SimpleAssertionError.createWithNoStack(this.toString());
+        record(AssertionErrorWithFacts.createWithoutFactsOrStack(message, caught));
+        throw AssertionErrorWithFacts.createWithoutFactsOrStack(toString());
       } else {
         throw caught;
       }
@@ -236,7 +234,7 @@ public final class Expect extends StandardSubjectBuilder implements TestRule {
   }
 
   private Expect(ExpectationGatherer gatherer) {
-    super(FailureMetadata.forFailureStrategy(gatherer));
+    super(FailureMetadata.forFailureStrategy(gatherer, /* suppressInferDescription= */ false));
     this.gatherer = checkNotNull(gatherer);
   }
 
@@ -272,6 +270,6 @@ public final class Expect extends StandardSubjectBuilder implements TestRule {
   enum TestPhase {
     BEFORE,
     DURING,
-    AFTER;
+    AFTER,
   }
 }

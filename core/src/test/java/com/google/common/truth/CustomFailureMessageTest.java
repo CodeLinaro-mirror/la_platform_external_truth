@@ -15,30 +15,28 @@
  */
 package com.google.common.truth;
 
+import static com.google.common.truth.ExpectFailure.expectFailure;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 import static com.google.common.truth.Truth.assert_;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests (and effectively sample code) for custom error message for checks.
- *
- * @author Christian Gruber (cgruber@israfil.net)
- */
+/** Tests (and effectively sample code) for custom error message for checks. */
 @SuppressWarnings("LenientFormatStringValidation") // Intentional for testing
 @RunWith(JUnit4.class)
-public class CustomFailureMessageTest extends BaseSubjectTestCase {
+public class CustomFailureMessageTest {
 
   @Test
   public void assertWithMessageThat() {
-    expectFailure.whenTesting().withMessage("This is a custom message").that(false).isTrue();
-    assertThat(expectFailure.getFailure())
-        .hasMessageThat()
-        .startsWith("This is a custom message\n");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.withMessage("This is a custom message").that(false).isTrue());
+    assertThat(e).hasMessageThat().startsWith("This is a custom message\n");
   }
 
   @Test
@@ -59,41 +57,35 @@ public class CustomFailureMessageTest extends BaseSubjectTestCase {
 
   @Test
   public void assertWithMessageThat_withPlaceholders() {
-    expectFailure
-        .whenTesting()
-        .withMessage("This is a %s %s", "custom", "message")
-        .that(false)
-        .isTrue();
-    assertThat(expectFailure.getFailure())
-        .hasMessageThat()
-        .startsWith("This is a custom message\n");
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting
+                    .withMessage("This is a %s %s", "custom", "message")
+                    .that(false)
+                    .isTrue());
+    assertThat(e).hasMessageThat().startsWith("This is a custom message\n");
   }
 
   @Test
   public void extraPlaceholderThrowsIae() {
-    try {
-      assert_().withMessage("This is a %s %s", "custom").that(true).isTrue();
-      fail("Should have thrown");
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> assert_().withMessage("This is a %s %s", "custom").that(true).isTrue());
   }
 
   @Test
   public void missingPlaceholderThrowsIae() {
-    try {
-      assert_().withMessage("This is a %s", "custom", "message").that(true).isTrue();
-      fail("Should have thrown");
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> assert_().withMessage("This is a %s", "custom", "message").that(true).isTrue());
   }
 
   @Test
   public void noPlaceholdersWithArgsThrowsIae() {
-    try {
-      assert_().withMessage("This is a custom message", "bad arg").that(true).isTrue();
-      fail("Should have thrown");
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> assert_().withMessage("This is a custom message", "bad arg").that(true).isTrue());
   }
 
   @Test

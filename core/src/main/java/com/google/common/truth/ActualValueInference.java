@@ -29,6 +29,7 @@ import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.Iterables;
 import org.objectweb.asm.Opcodes;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.j2objc.annotations.J2ObjCIncompatible;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -69,6 +70,7 @@ import org.objectweb.asm.Type;
  */
 @GwtIncompatible
 @J2ktIncompatible
+@J2ObjCIncompatible
 final class ActualValueInference {
   /** <b>Call {@link Platform#inferDescription} rather than calling this directly.</b> */
   static @Nullable String describeActualValue(String className, String methodName, int lineNumber) {
@@ -147,6 +149,8 @@ final class ActualValueInference {
     @Nullable String description() {
       return null;
     }
+
+    abstract StackEntry withType(InferredType newType);
   }
 
   /** An entry that we know nothing about except for its type. */
@@ -155,6 +159,11 @@ final class ActualValueInference {
   @GwtIncompatible
   @J2ktIncompatible
   abstract static class OpaqueEntry extends StackEntry {
+    @Override
+    StackEntry withType(InferredType newType) {
+      return opaque(newType);
+    }
+
     @Override
     public final String toString() {
       return "unknown";
@@ -176,6 +185,11 @@ final class ActualValueInference {
   @J2ktIncompatible
   abstract static class DescribedEntry extends StackEntry {
     @Override
+    StackEntry withType(InferredType newType) {
+      return described(newType, description());
+    }
+
+    @Override
     abstract String description();
 
     @Override
@@ -189,11 +203,11 @@ final class ActualValueInference {
   }
 
   /**
-   * An entry for a {@link Subject} (or a similar object derived with a {@code Subject}, like {@link
+   * An entry for a {@link Subject} (or a similar object derived with a {@link Subject}, like {@link
    * Ordered}).
    *
    * <p>The entry contains the "root actual value" of the assertion. In an assertion like {@code
-   * assertThat(e).hasMessageThat().contains("foo")}, the root actual value is the {@code Throwable}
+   * assertThat(e).hasMessageThat().contains("foo")}, the root actual value is the {@link Throwable}
    * {@code e}, even though the {@code contains} assertion operates on a string message.
    */
   @AutoValue
@@ -201,6 +215,11 @@ final class ActualValueInference {
   @GwtIncompatible
   @J2ktIncompatible
   abstract static class SubjectEntry extends StackEntry {
+    @Override
+    StackEntry withType(InferredType newType) {
+      return subjectFor(newType, actualValue());
+    }
+
     @Override
     abstract StackEntry actualValue();
 
@@ -224,6 +243,7 @@ final class ActualValueInference {
     private final ArrayList<StackEntry> localVariableSlots;
     private final ArrayList<StackEntry> operandStack = new ArrayList<>();
     private FrameInfo previousFrame;
+
     /** For debugging purpose. */
     private final String methodSignature;
 
@@ -695,8 +715,7 @@ final class ActualValueInference {
           pushDescriptor('[' + descriptor);
           break;
         case Opcodes.CHECKCAST:
-          pop();
-          pushDescriptor(descriptor);
+          push(pop().withType(InferredType.create(convertToDescriptor(type))));
           break;
         case Opcodes.INSTANCEOF:
           pop();
@@ -1316,8 +1335,10 @@ final class ActualValueInference {
     static final InferredType FLOAT = new AutoValue_ActualValueInference_InferredType("F");
     static final InferredType LONG = new AutoValue_ActualValueInference_InferredType("J");
     static final InferredType DOUBLE = new AutoValue_ActualValueInference_InferredType("D");
+
     /** Not a real value. */
     static final InferredType TOP = new AutoValue_ActualValueInference_InferredType("TOP");
+
     /** The value NULL */
     static final InferredType NULL = new AutoValue_ActualValueInference_InferredType("NULL");
 
@@ -1440,6 +1461,8 @@ final class ActualValueInference {
    */
   private static final ImmutableSet<String> BORING_NAMES =
       ImmutableSet.of(
+          // keep-sorted start
+          "_build",
           "asList",
           "build",
           "collect",
@@ -1448,10 +1471,17 @@ final class ActualValueInference {
           "from",
           "get",
           "iterator",
+          "listOf",
+          "mapOf",
           "of",
+          "setOf",
+          "sortedMapOf",
+          "sortedSetOf",
           "toArray",
           "toString",
-          "valueOf");
+          "valueOf"
+          // keep-sorted end
+          );
 
   private static boolean isThatOrAssertThat(String owner, String name) {
     /*

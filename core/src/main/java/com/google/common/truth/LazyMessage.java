@@ -16,17 +16,18 @@
 package com.google.common.truth;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Strings.lenientFormat;
+import static com.google.common.truth.Platform.lenientFormatForFailure;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 final class LazyMessage {
   private final String format;
   private final @Nullable Object[] args;
 
-  LazyMessage(String format, @Nullable Object... args) {
+  private LazyMessage(String format, @Nullable Object[] args) {
     this.format = format;
     this.args = args;
     int placeholders = countPlaceholders(format);
@@ -40,7 +41,7 @@ final class LazyMessage {
 
   @Override
   public String toString() {
-    return lenientFormat(format, args);
+    return lenientFormatForFailure(format, args);
   }
 
   @VisibleForTesting
@@ -58,11 +59,15 @@ final class LazyMessage {
     return count;
   }
 
-  static ImmutableList<String> evaluateAll(ImmutableList<LazyMessage> messages) {
+  static ImmutableList<String> evaluateAll(List<LazyMessage> messages) {
     ImmutableList.Builder<String> result = ImmutableList.builder();
     for (LazyMessage message : messages) {
       result.add(message.toString());
     }
     return result.build();
+  }
+
+  static LazyMessage create(String format, @Nullable Object[] args) {
+    return new LazyMessage(format, args);
   }
 }

@@ -15,12 +15,10 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 import org.jspecify.annotations.Nullable;
 
 /**
- * Propositions for {@link Throwable} subjects.
+ * A subject for {@link Throwable} values.
  *
  * <p>Truth does not provide its own support for calling a method and automatically catching an
  * expected exception, only for asserting on the exception after it has been caught. To catch the
@@ -35,24 +33,17 @@ import org.jspecify.annotations.Nullable;
  *     assertThrows(InvocationTargetException.class, () -> method.invoke(null));
  * assertThat(expected).hasCauseThat().isInstanceOf(IOException.class);
  * </pre>
- *
- * @author Kurt Alfred Kluever
  */
 public class ThrowableSubject extends Subject {
   private final @Nullable Throwable actual;
 
   /**
-   * Constructor for use by subclasses. If you want to create an instance of this class itself, call
-   * {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
+   * The constructor is for use by subclasses only. If you want to create an instance of this class
+   * itself, call {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
    */
-  protected ThrowableSubject(FailureMetadata metadata, @Nullable Throwable throwable) {
-    this(metadata, throwable, null);
-  }
-
-  ThrowableSubject(
-      FailureMetadata metadata, @Nullable Throwable throwable, @Nullable String typeDescription) {
-    super(metadata, throwable, typeDescription);
-    this.actual = throwable;
+  protected ThrowableSubject(FailureMetadata metadata, @Nullable Throwable actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
   /*
@@ -60,8 +51,18 @@ public class ThrowableSubject extends Subject {
    * as a suppressed exception
    */
 
-  /** Returns a {@code StringSubject} to make assertions about the throwable's message. */
+  /**
+   * Returns a {@link StringSubject} to make assertions about the {@linkplain Throwable#getMessage
+   * message} of the {@link Throwable}.
+   */
   public final StringSubject hasMessageThat() {
+    // We provide a more helpful error message if hasCauseThat() methods are chained too deep, as in
+    // assertThat(new Exception()).hasCauseThat().hasMessageThat()....
+    // This message also triggers for the simpler case of assertThat(null).hasMessageThat()....
+    if (actual == null) {
+      failForNullThrowable("Attempt to assert about the message of a null Throwable");
+      return ignoreCheck().that("");
+    }
     StandardSubjectBuilder check = check("getMessage()");
     if (actual instanceof ErrorWithFacts && ((ErrorWithFacts) actual).facts().size() > 1) {
       check =
@@ -69,25 +70,23 @@ public class ThrowableSubject extends Subject {
               "(Note from Truth: When possible, instead of asserting on the full message, assert"
                   + " about individual facts by using ExpectFailure.assertThat.)");
     }
-    return check.that(checkNotNull(actual).getMessage());
+    return check.that(actual.getMessage());
   }
 
   /**
-   * Returns a new {@code ThrowableSubject} that supports assertions on this throwable's direct
-   * cause. This method can be invoked repeatedly (e.g. {@code
-   * assertThat(e).hasCauseThat().hasCauseThat()....} to assert on a particular indirect cause.
+   * Returns a new {@link ThrowableSubject} to make assertions on the direct {@linkplain
+   * Throwable#getCause cause} of the {@link Throwable}. This method can be invoked repeatedly (e.g.
+   * {@code assertThat(e).hasCauseThat().hasCauseThat()....} to assert on a particular indirect
+   * cause.
    */
   // Any Throwable is fine, and we use plain Throwable to emphasize that it's not used "for real."
   @SuppressWarnings("ShouldNotSubclass")
   public final ThrowableSubject hasCauseThat() {
-    // provides a more helpful error message if hasCauseThat() methods are chained too deep
-    // e.g. assertThat(new Exception()).hCT().hCT()....
-    // TODO(diamondm) in keeping with other subjects' behavior this should still NPE if the subject
-    // *itself* is null, since there's no context to lose. See also b/37645583
+    // We provide a more helpful error message if hasCauseThat() methods are chained too deep, as in
+    // assertThat(new Exception()).hasCauseThat().hasCauseThat()....
+    // This message also triggers for the simpler case of assertThat(null).hasCauseThat()....
     if (actual == null) {
-      check("getCause()")
-          .withMessage("Causal chain is not deep enough - add a .isNotNull() check?")
-          .fail();
+      failForNullThrowable("Attempt to assert about the cause of a null Throwable");
       return ignoreCheck()
           .that(
               new Throwable() {
@@ -100,5 +99,9 @@ public class ThrowableSubject extends Subject {
               });
     }
     return check("getCause()").that(actual.getCause());
+  }
+
+  static Factory<ThrowableSubject, Throwable> throwables() {
+    return ThrowableSubject::new;
   }
 }

@@ -15,40 +15,35 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.numericFact;
 import static com.google.common.truth.Fact.simpleFact;
 
 import java.math.BigDecimal;
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for {@link BigDecimal} typed subjects.
- *
- * @author Kurt Alfred Kluever
- */
+/** A subject for {@link BigDecimal} values. */
 public final class BigDecimalSubject extends ComparableSubject<BigDecimal> {
   private final @Nullable BigDecimal actual;
 
-  BigDecimalSubject(FailureMetadata metadata, @Nullable BigDecimal actual) {
+  private BigDecimalSubject(FailureMetadata metadata, @Nullable BigDecimal actual) {
     super(metadata, actual);
     this.actual = actual;
   }
 
   /**
-   * Fails if the subject's value is not equal to the value of the given {@link BigDecimal}. (i.e.,
-   * fails if {@code actual.comparesTo(expected) != 0}).
+   * Checks that the actual value is equal to the value of the given {@link BigDecimal}. (i.e.,
+   * checks that {@code actual.compareTo(expected) == 0}).
    *
    * <p><b>Note:</b> The scale of the BigDecimal is ignored. If you want to compare the values and
    * the scales, use {@link #isEqualTo(Object)}.
    */
-  public void isEqualToIgnoringScale(BigDecimal expected) {
+  public void isEqualToIgnoringScale(@Nullable BigDecimal expected) {
     compareValues(expected);
   }
 
   /**
-   * Fails if the subject's value is not equal to the value of the {@link BigDecimal} created from
-   * the expected string (i.e., fails if {@code actual.comparesTo(new BigDecimal(expected)) != 0}).
+   * Checks that the actual value is equal to the value of the {@link BigDecimal} created from the
+   * expected string (i.e., checks that {@code actual.compareTo(new BigDecimal(expected)) == 0}).
    *
    * <p><b>Note:</b> The scale of the BigDecimal is ignored. If you want to compare the values and
    * the scales, use {@link #isEqualTo(Object)}.
@@ -58,8 +53,8 @@ public final class BigDecimalSubject extends ComparableSubject<BigDecimal> {
   }
 
   /**
-   * Fails if the subject's value is not equal to the value of the {@link BigDecimal} created from
-   * the expected {@code long} (i.e., fails if {@code actual.comparesTo(new BigDecimal(expected)) !=
+   * Checks that the actual value is equal to the value of the {@link BigDecimal} created from the
+   * expected {@code long} (i.e., checks that {@code actual.compareTo(new BigDecimal(expected)) ==
    * 0}).
    *
    * <p><b>Note:</b> The scale of the BigDecimal is ignored. If you want to compare the values and
@@ -70,7 +65,7 @@ public final class BigDecimalSubject extends ComparableSubject<BigDecimal> {
   }
 
   /**
-   * Fails if the subject's value and scale is not equal to the given {@link BigDecimal}.
+   * Checks that the actual value (including scale) is equal to the given {@link BigDecimal}.
    *
    * <p><b>Note:</b> If you only want to compare the values of the BigDecimals and not their scales,
    * use {@link #isEqualToIgnoringScale(BigDecimal)} instead.
@@ -81,8 +76,8 @@ public final class BigDecimalSubject extends ComparableSubject<BigDecimal> {
   }
 
   /**
-   * Fails if the subject is not equivalent to the given value according to {@link
-   * Comparable#compareTo}, (i.e., fails if {@code a.comparesTo(b) != 0}). This method behaves
+   * Checks that the actual value is equivalent to the given value according to {@link
+   * Comparable#compareTo}, (i.e., checks that {@code a.compareTo(b) == 0}). This method behaves
    * identically to (the more clearly named) {@link #isEqualToIgnoringScale(BigDecimal)}.
    *
    * <p><b>Note:</b> Do not use this method for checking object equality. Instead, use {@link
@@ -94,8 +89,18 @@ public final class BigDecimalSubject extends ComparableSubject<BigDecimal> {
   }
 
   private void compareValues(@Nullable BigDecimal expected) {
-    if (checkNotNull(actual).compareTo(checkNotNull(expected)) != 0) {
-      failWithoutActual(fact("expected", expected), butWas(), simpleFact("(scale is ignored)"));
+    if (actual == null || expected == null) {
+      // This won't mention "(scale is ignored)" if it fails, but that seems tolerable or even good?
+      isEqualTo(expected);
+    } else if (actual.compareTo(expected) != 0) {
+      failWithoutActual(
+          numericFact("expected", expected),
+          numericFact("but was", actual),
+          simpleFact("(scale is ignored)"));
     }
+  }
+
+  static Factory<BigDecimalSubject, BigDecimal> bigDecimals() {
+    return BigDecimalSubject::new;
   }
 }

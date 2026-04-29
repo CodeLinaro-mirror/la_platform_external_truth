@@ -27,8 +27,6 @@ import java.util.Map;
 /**
  * A custom implementation of the diff algorithm based on the solution described at
  * https://en.wikipedia.org/wiki/Longest_common_subsequence_problem
- *
- * @author Yun Peng (pcloudy@google.com)
  */
 final class DiffUtils {
   // A list of unique strings appeared in compared texts.
@@ -207,19 +205,16 @@ final class DiffUtils {
       int blockSizeOrigin = lineNumOrigin - startLineOrigin - (next - end - 1);
       int blockSizeRevised = lineNumRevised - startLineRevised - (next - end - 1);
 
-      StringBuilder header = new StringBuilder();
-      header
-          .append("@@ -")
-          .append(startLineOrigin)
-          .append(",")
-          .append(blockSizeOrigin)
-          .append(" +")
-          .append(startLineRevised)
-          .append(",")
-          .append(blockSizeRevised)
-          .append(" @@");
-
-      reducedUnifiedDiff.add(header.toString());
+      reducedUnifiedDiff.add(
+          "@@ -"
+              + startLineOrigin
+              + ","
+              + blockSizeOrigin
+              + " +"
+              + startLineRevised
+              + ","
+              + blockSizeRevised
+              + " @@");
       for (int i = start; i < end; i++) {
         reducedUnifiedDiff.add(
             unifiedDiffType.get(i) + stringList.get(unifiedDiffContentId.get(i)));
@@ -231,4 +226,6 @@ final class DiffUtils {
       List<String> original, List<String> revised, int contextSize) {
     return new DiffUtils().diff(original, revised, contextSize);
   }
+
+  private DiffUtils() {}
 }

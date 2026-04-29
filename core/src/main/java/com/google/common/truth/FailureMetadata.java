@@ -20,8 +20,11 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verifyNotNull;
 import static com.google.common.truth.ComparisonFailures.makeComparisonFailureFacts;
 import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.factFromSupplier;
+import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.LazyMessage.evaluateAll;
 import static com.google.common.truth.Platform.cleanStackTrace;
+import static com.google.common.truth.Platform.forceInferDescription;
 import static com.google.common.truth.Platform.inferDescription;
 import static com.google.common.truth.Platform.makeComparisonFailure;
 import static com.google.common.truth.SubjectUtils.append;
@@ -35,8 +38,8 @@ import org.jspecify.annotations.Nullable;
  * An opaque, immutable object containing state from the previous calls in the fluent assertion
  * chain. It appears primarily as a parameter to {@link Subject} constructors (and {@link
  * Subject.Factory} methods), which should pass it to the superclass constructor and not otherwise
- * use or store it. In particular, users should not attempt to call {@code Subject} constructors or
- * {@code Subject.Factory} methods directly. Instead, they should use the appropriate factory
+ * use or store it. In particular, users should not attempt to call {@link Subject} constructors or
+ * {@link Subject.Factory} methods directly. Instead, they should use the appropriate factory
  * method:
  *
  * <ul>
@@ -52,54 +55,18 @@ import org.jspecify.annotations.Nullable;
  * constructor.)
  */
 public final class FailureMetadata {
-  static FailureMetadata forFailureStrategy(FailureStrategy failureStrategy) {
+  static FailureMetadata forFailureStrategy(
+      FailureStrategy strategy, boolean suppressInferDescription) {
     return new FailureMetadata(
-        failureStrategy, ImmutableList.<LazyMessage>of(), ImmutableList.<Step>of());
+        strategy,
+        suppressInferDescription,
+        /* messages= */ ImmutableList.of(),
+        /* steps= */ ImmutableList.of());
   }
 
   private final FailureStrategy strategy;
 
-  /**
-   * The data from a call to either (a) a {@link Subject} constructor or (b) {@link Subject#check}.
-   */
-  private static final class Step {
-    static Step subjectCreation(Subject subject) {
-      return new Step(checkNotNull(subject), null, null);
-    }
-
-    static Step checkCall(
-        @Nullable OldAndNewValuesAreSimilar valuesAreSimilar,
-        @Nullable Function<String, String> descriptionUpdate) {
-      return new Step(null, descriptionUpdate, valuesAreSimilar);
-    }
-
-    /*
-     * We store Subject, rather than the actual value itself, so that we can call
-     * actualCustomStringRepresentation(). Why not call actualCustomStringRepresentation()
-     * immediately? First, it might be expensive, and second, the Subject isn't initialized at the
-     * time we receive it. We *might* be able to make it safe to call if it looks only at actual(),
-     * but it might try to look at facts initialized by a subclass, which aren't ready yet.
-     */
-    final @Nullable Subject subject;
-
-    final @Nullable Function<String, String> descriptionUpdate;
-
-    // Present only when descriptionUpdate is.
-    final @Nullable OldAndNewValuesAreSimilar valuesAreSimilar;
-
-    private Step(
-        @Nullable Subject subject,
-        @Nullable Function<String, String> descriptionUpdate,
-        @Nullable OldAndNewValuesAreSimilar valuesAreSimilar) {
-      this.subject = subject;
-      this.descriptionUpdate = descriptionUpdate;
-      this.valuesAreSimilar = valuesAreSimilar;
-    }
-
-    boolean isCheckCall() {
-      return subject == null;
-    }
-  }
+  private final boolean suppressInferDescription;
 
   /*
    * TODO(cpovirk): This implementation is wasteful, especially because `steps` is used even by
@@ -113,9 +80,13 @@ public final class FailureMetadata {
 
   private final ImmutableList<Step> steps;
 
-  FailureMetadata(
-      FailureStrategy strategy, ImmutableList<LazyMessage> messages, ImmutableList<Step> steps) {
+  private FailureMetadata(
+      FailureStrategy strategy,
+      boolean suppressInferDescription,
+      ImmutableList<LazyMessage> messages,
+      ImmutableList<Step> steps) {
     this.strategy = checkNotNull(strategy);
+    this.suppressInferDescription = suppressInferDescription;
     this.messages = checkNotNull(messages);
     this.steps = checkNotNull(steps);
   }
@@ -153,23 +124,20 @@ public final class FailureMetadata {
    */
   enum OldAndNewValuesAreSimilar {
     SIMILAR,
-    DIFFERENT;
+    DIFFERENT,
   }
 
   /**
    * Returns a new instance whose failures will contain the given message. The way for Truth users
    * to set a message is {@code check(...).withMessage(...).that(...)} (for calls from within a
-   * {@code Subject}) or {@link Truth#assertWithMessage} (for most other calls).
+   * {@link Subject}) or {@link Truth#assertWithMessage} (for most other calls).
    */
   FailureMetadata withMessage(String format, @Nullable Object[] args) {
-    ImmutableList<LazyMessage> messages = append(this.messages, new LazyMessage(format, args));
+    ImmutableList<LazyMessage> messages = append(this.messages, LazyMessage.create(format, args));
     return derive(messages, steps);
   }
 
-  void failEqualityCheck(
-      ImmutableList<Fact> tailFacts,
-      String expected,
-      String actual) {
+  void failEqualityCheck(ImmutableList<Fact> tailFacts, String expected, String actual) {
     doFail(
         makeComparisonFailure(
             evaluateAll(messages),
@@ -182,9 +150,25 @@ public final class FailureMetadata {
 
   void fail(ImmutableList<Fact> facts) {
     doFail(
-        new AssertionErrorWithFacts(
+        AssertionErrorWithFacts.create(
             evaluateAll(messages),
             concat(description(), facts, rootUnlessThrowable()),
+            rootCause()));
+  }
+
+  /**
+   * Special failure method for {@link ThrowableSubject} to use when users try to assert about the
+   * cause or message of a null {@link Throwable}.
+   */
+  void failForNullThrowable(String message) {
+    doFail(
+        AssertionErrorWithFacts.create(
+            evaluateAll(messages),
+            concat(
+                // unusual case: put a fact *before* the description
+                ImmutableList.of(simpleFact(message)),
+                description(/* factKey= */ "null Throwable was"),
+                rootUnlessThrowable()),
             rootCause()));
   }
 
@@ -194,7 +178,7 @@ public final class FailureMetadata {
   }
 
   private FailureMetadata derive(ImmutableList<LazyMessage> messages, ImmutableList<Step> steps) {
-    return new FailureMetadata(strategy, messages, steps);
+    return new FailureMetadata(strategy, suppressInferDescription, messages, steps);
   }
 
   /**
@@ -222,7 +206,13 @@ public final class FailureMetadata {
    * to be worth displaying.)
    */
   private ImmutableList<Fact> description() {
-    String description = inferDescription();
+    return description(/* factKey= */ "value of");
+  }
+
+  /** Overload of {@link #description()} that allows passing a custom key for the fact. */
+  private ImmutableList<Fact> description(String factKey) {
+    String description =
+        suppressInferDescription && !forceInferDescription() ? null : inferDescription();
     boolean descriptionIsInteresting = description != null;
     for (Step step : steps) {
       if (step.isCheckCall()) {
@@ -242,8 +232,8 @@ public final class FailureMetadata {
       }
     }
     return descriptionIsInteresting
-        ? ImmutableList.of(fact("value of", description))
-        : ImmutableList.<Fact>of();
+        ? ImmutableList.of(fact(factKey, description))
+        : ImmutableList.of();
   }
 
   /**
@@ -287,7 +277,7 @@ public final class FailureMetadata {
       }
 
       if (rootSubject == null) {
-        if (checkNotNull(step.subject).actual() instanceof Throwable) {
+        if (checkNotNull(step.subject).actualForPackageMembersToCall() instanceof Throwable) {
           /*
            * We'll already include the Throwable as a cause of the AssertionError (see rootCause()),
            * so we don't need to include it again in the message.
@@ -297,19 +287,20 @@ public final class FailureMetadata {
         rootSubject = step;
       }
     }
+    if (!seenDerivation) {
+      return ImmutableList.of();
+    }
     /*
      * TODO(cpovirk): Maybe say "root foo was: ..." instead of just "foo was: ..." if there's more
      * than one foo in the chain, if the description string doesn't start with "foo," and/or if the
      * name we have is just "object?"
      */
-    return seenDerivation
-        ? ImmutableList.of(
-            fact(
-                // TODO(cpovirk): Use inferDescription() here when appropriate? But it can be long.
-                checkNotNull(checkNotNull(rootSubject).subject).typeDescription() + " was",
-                checkNotNull(checkNotNull(rootSubject).subject)
-                    .actualCustomStringRepresentationForPackageMembersToCall()))
-        : ImmutableList.<Fact>of();
+    Subject root = checkNotNull(checkNotNull(rootSubject).subject);
+    return ImmutableList.of(
+        factFromSupplier(
+            // TODO(cpovirk): Use inferDescription() here when appropriate? But it can be long.
+            root.typeDescription() + " was",
+            root::actualCustomStringRepresentationForPackageMembersToCall));
   }
 
   /**
@@ -318,10 +309,54 @@ public final class FailureMetadata {
    */
   private @Nullable Throwable rootCause() {
     for (Step step : steps) {
-      if (!step.isCheckCall() && checkNotNull(step.subject).actual() instanceof Throwable) {
-        return (Throwable) step.subject.actual();
+      if (!step.isCheckCall()
+          && checkNotNull(step.subject).actualForPackageMembersToCall() instanceof Throwable) {
+        return (Throwable) step.subject.actualForPackageMembersToCall();
       }
     }
     return null;
+  }
+
+  /**
+   * The data from a call to either (a) a {@link Subject} constructor or (b) {@link Subject#check}.
+   */
+  private static final class Step {
+    static Step subjectCreation(Subject subject) {
+      return new Step(checkNotNull(subject), null, null);
+    }
+
+    static Step checkCall(
+        @Nullable OldAndNewValuesAreSimilar valuesAreSimilar,
+        @Nullable Function<String, String> descriptionUpdate) {
+      return new Step(null, descriptionUpdate, valuesAreSimilar);
+    }
+
+    /*
+     * We store Subject, rather than the actual value itself, so that we can call
+     * actualCustomStringRepresentation(). Why not call actualCustomStringRepresentation()
+     * immediately? First, it might be expensive, and second, the Subject isn't initialized at the
+     * time we receive it. We *might* be able to make it safe to call if it looks only at
+     * actualForPackageMembersToCall(), but it might try to look at facts initialized by a subclass,
+     * which aren't ready yet.
+     */
+    final @Nullable Subject subject;
+
+    final @Nullable Function<String, String> descriptionUpdate;
+
+    // Present only when descriptionUpdate is.
+    final @Nullable OldAndNewValuesAreSimilar valuesAreSimilar;
+
+    private Step(
+        @Nullable Subject subject,
+        @Nullable Function<String, String> descriptionUpdate,
+        @Nullable OldAndNewValuesAreSimilar valuesAreSimilar) {
+      this.subject = subject;
+      this.descriptionUpdate = descriptionUpdate;
+      this.valuesAreSimilar = valuesAreSimilar;
+    }
+
+    boolean isCheckCall() {
+      return subject == null;
+    }
   }
 }

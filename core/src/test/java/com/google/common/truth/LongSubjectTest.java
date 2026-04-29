@@ -16,24 +16,18 @@
 package com.google.common.truth;
 
 import static com.google.common.truth.ExpectFailure.assertThat;
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.Fact.formatNumericValue;
+import static com.google.common.truth.FailureAssertions.assertFailureKeys;
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
 
-import com.google.common.truth.ExpectFailure.SimpleSubjectBuilderCallback;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for Long Subjects.
- *
- * @author David Saff
- * @author Christian Gruber
- * @author Kurt Alfred Kluever
- */
+/** Tests for {@link LongSubject}. */
 @RunWith(JUnit4.class)
-public class LongSubjectTest extends BaseSubjectTestCase {
+public class LongSubjectTest {
 
   @Test
   @SuppressWarnings("TruthSelfEquals")
@@ -49,17 +43,18 @@ public class LongSubjectTest extends BaseSubjectTestCase {
   @Test
   public void equalityWithInts() {
     assertThat(0L).isEqualTo(0);
-    expectFailureWhenTestingThat(0L).isNotEqualTo(0);
+    expectFailure(whenTesting -> whenTesting.that(0L).isNotEqualTo(0));
   }
 
   @Test
   public void equalityFail() {
-    expectFailureWhenTestingThat(4L).isEqualTo(5L);
+    expectFailure(whenTesting -> whenTesting.that(4L).isEqualTo(5L));
   }
 
+  @SuppressWarnings("SelfAssertion")
   @Test
   public void inequalityFail() {
-    expectFailureWhenTestingThat(4L).isNotEqualTo(4L);
+    expectFailure(whenTesting -> whenTesting.that(4L).isNotEqualTo(4L));
   }
 
   @Test
@@ -69,67 +64,69 @@ public class LongSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void equalityOfNullsFail_nullActual() {
-    expectFailureWhenTestingThat(null).isEqualTo(5L);
+    expectFailure(whenTesting -> whenTesting.that((Long) null).isEqualTo(5L));
   }
 
   @Test
   public void equalityOfNullsFail_nullExpected() {
-    expectFailureWhenTestingThat(5L).isEqualTo(null);
+    expectFailure(whenTesting -> whenTesting.that(5L).isEqualTo(null));
   }
 
   @Test
   public void inequalityOfNulls() {
     assertThat(4L).isNotEqualTo(null);
     assertThat((Integer) null).isNotEqualTo(4L);
+    assertThat((Long) null).isNotEqualTo(4L);
   }
 
   @Test
   public void inequalityOfNullsFail() {
-    expectFailureWhenTestingThat(null).isNotEqualTo(null);
+    expectFailure(whenTesting -> whenTesting.that((Long) null).isNotEqualTo(null));
+  }
+
+  @SuppressWarnings("SelfAssertion")
+  @Test
+  public void numericTypeWithSameValue_shouldBeEqual_long_long() {
+    expectFailure(whenTesting -> whenTesting.that(42L).isNotEqualTo(42L));
   }
 
   @Test
-  public void testNumericTypeWithSameValue_shouldBeEqual_long_long() {
-    expectFailureWhenTestingThat(42L).isNotEqualTo(42L);
-  }
-
-  @Test
-  public void testNumericTypeWithSameValue_shouldBeEqual_long_int() {
-    expectFailureWhenTestingThat(42L).isNotEqualTo(42);
+  public void numericTypeWithSameValue_shouldBeEqual_long_int() {
+    expectFailure(whenTesting -> whenTesting.that(42L).isNotEqualTo(42));
   }
 
   @Test
   public void isGreaterThan_int_strictly() {
-    expectFailureWhenTestingThat(2L).isGreaterThan(3);
+    expectFailure(whenTesting -> whenTesting.that(2L).isGreaterThan(3));
   }
 
   @Test
   public void isGreaterThan_int() {
-    expectFailureWhenTestingThat(2L).isGreaterThan(2);
+    expectFailure(whenTesting -> whenTesting.that(2L).isGreaterThan(2));
     assertThat(2L).isGreaterThan(1);
   }
 
   @Test
   public void isLessThan_int_strictly() {
-    expectFailureWhenTestingThat(2L).isLessThan(1);
+    expectFailure(whenTesting -> whenTesting.that(2L).isLessThan(1));
   }
 
   @Test
   public void isLessThan_int() {
-    expectFailureWhenTestingThat(2L).isLessThan(2);
+    expectFailure(whenTesting -> whenTesting.that(2L).isLessThan(2));
     assertThat(2L).isLessThan(3);
   }
 
   @Test
   public void isAtLeast_int() {
-    expectFailureWhenTestingThat(2L).isAtLeast(3);
+    expectFailure(whenTesting -> whenTesting.that(2L).isAtLeast(3));
     assertThat(2L).isAtLeast(2);
     assertThat(2L).isAtLeast(1);
   }
 
   @Test
   public void isAtMost_int() {
-    expectFailureWhenTestingThat(2L).isAtMost(1);
+    expectFailure(whenTesting -> whenTesting.that(2L).isAtMost(1));
     assertThat(2L).isAtMost(2);
     assertThat(2L).isAtMost(3);
   }
@@ -157,21 +154,12 @@ public class LongSubjectTest extends BaseSubjectTestCase {
   }
 
   private static void assertThatIsWithinFails(long actual, long tolerance, long expected) {
-    ExpectFailure.SimpleSubjectBuilderCallback<LongSubject, Long> callback =
-        new ExpectFailure.SimpleSubjectBuilderCallback<LongSubject, Long>() {
-          @Override
-          public void invokeAssertion(SimpleSubjectBuilder<LongSubject, Long> expect) {
-            expect.that(actual).isWithin(tolerance).of(expected);
-          }
-        };
-    AssertionError failure = expectFailure(callback);
-    assertThat(failure)
-        .factKeys()
-        .containsExactly("expected", "but was", "outside tolerance")
-        .inOrder();
-    assertThat(failure).factValue("expected").isEqualTo(Long.toString(expected));
-    assertThat(failure).factValue("but was").isEqualTo(Long.toString(actual));
-    assertThat(failure).factValue("outside tolerance").isEqualTo(Long.toString(tolerance));
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isWithin(tolerance).of(expected));
+    assertThat(e).factKeys().containsExactly("expected", "but was", "outside tolerance").inOrder();
+    assertThat(e).factValue("expected").isEqualTo(formatNumericValue(expected));
+    assertThat(e).factValue("but was").isEqualTo(formatNumericValue(actual));
+    assertThat(e).factValue("outside tolerance").isEqualTo(formatNumericValue(tolerance));
   }
 
   @Test
@@ -197,16 +185,10 @@ public class LongSubjectTest extends BaseSubjectTestCase {
   }
 
   private static void assertThatIsNotWithinFails(long actual, long tolerance, long expected) {
-    ExpectFailure.SimpleSubjectBuilderCallback<LongSubject, Long> callback =
-        new ExpectFailure.SimpleSubjectBuilderCallback<LongSubject, Long>() {
-          @Override
-          public void invokeAssertion(SimpleSubjectBuilder<LongSubject, Long> expect) {
-            expect.that(actual).isNotWithin(tolerance).of(expected);
-          }
-        };
-    AssertionError failure = expectFailure(callback);
-    assertThat(failure).factValue("expected not to be").isEqualTo(Long.toString(expected));
-    assertThat(failure).factValue("within tolerance").isEqualTo(Long.toString(tolerance));
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isNotWithin(tolerance).of(expected));
+    assertThat(e).factValue("expected not to be").isEqualTo(formatNumericValue(expected));
+    assertThat(e).factValue("within tolerance").isEqualTo(formatNumericValue(tolerance));
   }
 
   @Test
@@ -224,51 +206,32 @@ public class LongSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void isWithinNegativeTolerance() {
-    isWithinNegativeToleranceThrowsIAE(0L, -10, 5);
-    isWithinNegativeToleranceThrowsIAE(0L, -10, 20);
-    isNotWithinNegativeToleranceThrowsIAE(0L, -10, 5);
-    isNotWithinNegativeToleranceThrowsIAE(0L, -10, 20);
+    isWithinNegativeToleranceThrows(0L, -10, 0L);
+    isWithinNegativeToleranceThrows(0L, -10, 0L);
+    isNotWithinNegativeToleranceThrows(0L, -10, 0L);
+    isNotWithinNegativeToleranceThrows(0L, -10, 0L);
   }
 
-  private static void isWithinNegativeToleranceThrowsIAE(
+  private static void isWithinNegativeToleranceThrows(long actual, long tolerance, long expected) {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isWithin(tolerance).of(expected));
+    assertFailureKeys(
+        e,
+        "could not perform approximate-equality check because tolerance was negative",
+        "expected",
+        "was",
+        "tolerance");
+  }
+
+  private static void isNotWithinNegativeToleranceThrows(
       long actual, long tolerance, long expected) {
-    try {
-      assertThat(actual).isWithin(tolerance).of(expected);
-      fail("Expected IllegalArgumentException to be thrown but wasn't");
-    } catch (IllegalArgumentException iae) {
-      assertThat(iae)
-          .hasMessageThat()
-          .isEqualTo("tolerance (" + tolerance + ") cannot be negative");
-    }
-  }
-
-  private static void isNotWithinNegativeToleranceThrowsIAE(
-      long actual, long tolerance, long expected) {
-    try {
-      assertThat(actual).isNotWithin(tolerance).of(expected);
-      fail("Expected IllegalArgumentException to be thrown but wasn't");
-    } catch (IllegalArgumentException iae) {
-      assertThat(iae)
-          .hasMessageThat()
-          .isEqualTo("tolerance (" + tolerance + ") cannot be negative");
-    }
-  }
-
-  private static final Subject.Factory<LongSubject, Long> LONG_SUBJECT_FACTORY =
-      new Subject.Factory<LongSubject, Long>() {
-        @Override
-        public LongSubject createSubject(FailureMetadata metadata, Long that) {
-          return new LongSubject(metadata, that);
-        }
-      };
-
-  @CanIgnoreReturnValue
-  private static AssertionError expectFailure(
-      SimpleSubjectBuilderCallback<LongSubject, Long> callback) {
-    return ExpectFailure.expectFailureAbout(LONG_SUBJECT_FACTORY, callback);
-  }
-
-  private LongSubject expectFailureWhenTestingThat(Long actual) {
-    return expectFailure.whenTesting().that(actual);
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isNotWithin(tolerance).of(expected));
+    assertFailureKeys(
+        e,
+        "could not perform approximate-equality check because tolerance was negative",
+        "expected",
+        "was",
+        "tolerance");
   }
 }

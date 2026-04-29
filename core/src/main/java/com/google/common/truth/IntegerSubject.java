@@ -15,26 +15,21 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.numericFact;
+import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.MathUtil.equalWithinTolerance;
+import static java.lang.Math.abs;
+import static java.lang.Math.subtractExact;
 
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for {@link Integer} subjects.
- *
- * @author David Saff
- * @author Christian Gruber (cgruber@israfil.net)
- * @author Kurt Alfred Kluever
- */
+/** A subject for {@link Integer} values. */
 public class IntegerSubject extends ComparableSubject<Integer> {
   private final @Nullable Integer actual;
 
   /**
-   * Constructor for use by subclasses. If you want to create an instance of this class itself, call
-   * {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
+   * The constructor is for use by subclasses only. If you want to create an instance of this class
+   * itself, call {@link Subject#check(String, Object...) check(...)}{@code .that(actual)}.
    */
   protected IntegerSubject(FailureMetadata metadata, @Nullable Integer actual) {
     super(metadata, actual);
@@ -42,22 +37,26 @@ public class IntegerSubject extends ComparableSubject<Integer> {
   }
 
   /**
-   * A partially specified check about an approximate relationship to a {@code int} subject using a
-   * tolerance.
+   * A partially specified check about an approximate relationship to a {@code int} actual value
+   * using a tolerance.
    *
    * @since 1.2
    */
-  public abstract static class TolerantIntegerComparison {
+  public static final class TolerantIntegerComparison {
+    private final IntegerComparer comparer;
 
-    // Prevent subclassing outside of this class
-    private TolerantIntegerComparison() {}
+    private TolerantIntegerComparison(IntegerComparer comparer) {
+      this.comparer = comparer;
+    }
 
     /**
-     * Fails if the subject was expected to be within the tolerance of the given value but was not
-     * <i>or</i> if it was expected <i>not</i> to be within the tolerance but was. The subject and
-     * tolerance are specified earlier in the fluent call chain.
+     * Checks that the actual value is within the tolerance of the given value or <i>not</i> within
+     * the tolerance of the given value, depending on the choice made earlier in the fluent call
+     * chain. The actual value and tolerance are also specified earlier in the fluent call chain.
      */
-    public abstract void of(int expectedInteger);
+    public void of(int other) {
+      comparer.compareAgainst(other);
+    }
 
     /**
      * @throws UnsupportedOperationException always
@@ -66,7 +65,7 @@ public class IntegerSubject extends ComparableSubject<Integer> {
      */
     @Deprecated
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(@Nullable Object other) {
       throw new UnsupportedOperationException(
           "If you meant to compare ints, use .of(int) instead.");
     }
@@ -80,60 +79,92 @@ public class IntegerSubject extends ComparableSubject<Integer> {
     public int hashCode() {
       throw new UnsupportedOperationException("Subject.hashCode() is not supported.");
     }
+
+    static TolerantIntegerComparison comparing(IntegerComparer comparer) {
+      return new TolerantIntegerComparison(comparer);
+    }
+  }
+
+  private interface IntegerComparer {
+    void compareAgainst(int other);
   }
 
   /**
-   * Prepares for a check that the subject is a number within the given tolerance of an expected
-   * value that will be provided in the next call in the fluent chain.
+   * Prepares for a check that the actual value is a number within the given tolerance of an
+   * expected value that will be provided in the next call in the fluent chain.
    *
-   * @param tolerance an inclusive upper bound on the difference between the subject and object
-   *     allowed by the check, which must be a non-negative value.
+   * @param tolerance an inclusive upper bound on the difference between the actual value and
+   *     expected value allowed by the check, which must be a non-negative value.
    * @since 1.2
    */
   public TolerantIntegerComparison isWithin(int tolerance) {
-    return new TolerantIntegerComparison() {
-      @Override
-      public void of(int expected) {
-        Integer actual = IntegerSubject.this.actual;
-        checkNotNull(
-            actual, "actual value cannot be null. tolerance=%s expected=%s", tolerance, expected);
-        checkTolerance(tolerance);
-
-        if (!equalWithinTolerance(actual, expected, tolerance)) {
-          failWithoutActual(
-              fact("expected", Integer.toString(expected)),
-              butWas(),
-              fact("outside tolerance", Integer.toString(tolerance)));
-        }
-      }
-    };
+    return TolerantIntegerComparison.comparing(
+        other -> {
+          if (tolerance < 0) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because tolerance was negative"),
+                numericFact("expected", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (actual == null) {
+            failWithoutActual(
+                numericFact("expected a value near", other),
+                numericFact("but was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (!equalWithinTolerance(actual, other, tolerance)) {
+            failWithoutActual(
+                numericFact("expected", other),
+                numericFact("but was", actual),
+                numericFact("outside tolerance", tolerance));
+          }
+        });
   }
 
   /**
-   * Prepares for a check that the subject is a number not within the given tolerance of an expected
-   * value that will be provided in the next call in the fluent chain.
+   * Prepares for a check that the actual value is a number not within the given tolerance of an
+   * expected value that will be provided in the next call in the fluent chain.
    *
-   * @param tolerance an exclusive lower bound on the difference between the subject and object
-   *     allowed by the check, which must be a non-negative value.
+   * @param tolerance an exclusive lower bound on the difference between the actual value and
+   *     expected value allowed by the check, which must be a non-negative value.
    * @since 1.2
    */
   public TolerantIntegerComparison isNotWithin(int tolerance) {
-    return new TolerantIntegerComparison() {
-      @Override
-      public void of(int expected) {
-        Integer actual = IntegerSubject.this.actual;
-        checkNotNull(
-            actual, "actual value cannot be null. tolerance=%s expected=%s", tolerance, expected);
-        checkTolerance(tolerance);
+    return TolerantIntegerComparison.comparing(
+        other -> {
+          if (tolerance < 0) {
+            failWithoutActual(
+                simpleFact(
+                    "could not perform approximate-equality check because tolerance was negative"),
+                numericFact("expected", other),
+                numericFact("was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (actual == null) {
+            failWithoutActual(
+                numericFact("expected a value that is not near", other),
+                numericFact("but was", actual),
+                numericFact("tolerance", tolerance));
+          } else if (equalWithinTolerance(actual, other, tolerance)) {
+            failWithoutActual(
+                numericFact("expected not to be", other),
+                numericFact("but was", actual),
+                numericFact("within tolerance", tolerance));
+          }
+        });
+  }
 
-        if (equalWithinTolerance(actual, expected, tolerance)) {
-          failWithoutActual(
-              fact("expected not to be", Integer.toString(expected)),
-              butWas(),
-              fact("within tolerance", Integer.toString(tolerance)));
-        }
-      }
-    };
+  /**
+   * Returns true iff {@code left} and {@code right} are values within {@code tolerance} of each
+   * other.
+   */
+  private static boolean equalWithinTolerance(int left, int right, int tolerance) {
+    try {
+      int absDiff = abs(subtractExact(left, right));
+      return 0 <= absDiff && absDiff <= abs(tolerance);
+    } catch (ArithmeticException e) {
+      // The numbers are so far apart their difference isn't even a int.
+      return false;
+    }
   }
 
   /**
@@ -141,12 +172,11 @@ public class IntegerSubject extends ComparableSubject<Integer> {
    */
   @Override
   @Deprecated
-  public final void isEquivalentAccordingToCompareTo(@Nullable Integer other) {
-    super.isEquivalentAccordingToCompareTo(other);
+  public final void isEquivalentAccordingToCompareTo(@Nullable Integer expected) {
+    super.isEquivalentAccordingToCompareTo(expected);
   }
 
-  /** Ensures that the given tolerance is a non-negative value. */
-  private static void checkTolerance(int tolerance) {
-    checkArgument(tolerance >= 0, "tolerance (%s) cannot be negative", tolerance);
+  static Factory<IntegerSubject, Integer> integers() {
+    return IntegerSubject::new;
   }
 }

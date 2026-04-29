@@ -16,24 +16,18 @@
 package com.google.common.truth;
 
 import static com.google.common.truth.ExpectFailure.assertThat;
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.Fact.formatNumericValue;
+import static com.google.common.truth.FailureAssertions.assertFailureKeys;
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
 
-import com.google.common.truth.ExpectFailure.SimpleSubjectBuilderCallback;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for Integer Subjects.
- *
- * @author David Saff
- * @author Christian Gruber
- * @author Kurt Alfred Kluever
- */
+/** Tests for {@link IntegerSubject}. */
 @RunWith(JUnit4.class)
-public class IntegerSubjectTest extends BaseSubjectTestCase {
+public class IntegerSubjectTest {
 
   @Test
   @SuppressWarnings("TruthSelfEquals")
@@ -49,17 +43,18 @@ public class IntegerSubjectTest extends BaseSubjectTestCase {
   @Test
   public void equalityWithLongs() {
     assertThat(0).isEqualTo(0L);
-    expectFailureWhenTestingThat(0).isNotEqualTo(0L);
+    expectFailure(whenTesting -> whenTesting.that(0).isNotEqualTo(0L));
   }
 
   @Test
   public void equalityFail() {
-    expectFailureWhenTestingThat(4).isEqualTo(5);
+    expectFailure(whenTesting -> whenTesting.that(4).isEqualTo(5));
   }
 
+  @SuppressWarnings("SelfAssertion")
   @Test
   public void inequalityFail() {
-    expectFailureWhenTestingThat(4).isNotEqualTo(4);
+    expectFailure(whenTesting -> whenTesting.that(4).isNotEqualTo(4));
   }
 
   @Test
@@ -69,12 +64,12 @@ public class IntegerSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void equalityOfNullsFail_nullActual() {
-    expectFailureWhenTestingThat(null).isEqualTo(5);
+    expectFailure(whenTesting -> whenTesting.that((Integer) null).isEqualTo(5));
   }
 
   @Test
   public void equalityOfNullsFail_nullExpected() {
-    expectFailureWhenTestingThat(5).isEqualTo(null);
+    expectFailure(whenTesting -> whenTesting.that(5).isEqualTo(null));
   }
 
   @Test
@@ -85,7 +80,7 @@ public class IntegerSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void inequalityOfNullsFail() {
-    expectFailureWhenTestingThat(null).isNotEqualTo(null);
+    expectFailure(whenTesting -> whenTesting.that((Integer) null).isNotEqualTo(null));
   }
 
   @Test
@@ -102,22 +97,24 @@ public class IntegerSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void overflowOnPrimitives_shouldBeEqualAfterCast_min() {
-    expectFailureWhenTestingThat(Integer.MIN_VALUE).isNotEqualTo((long) Integer.MIN_VALUE);
+    expectFailure(
+        whenTesting -> whenTesting.that(Integer.MIN_VALUE).isNotEqualTo((long) Integer.MIN_VALUE));
   }
 
   @Test
   public void overflowOnPrimitives_shouldBeEqualAfterCast_max() {
-    expectFailureWhenTestingThat(Integer.MAX_VALUE).isNotEqualTo((long) Integer.MAX_VALUE);
+    expectFailure(
+        whenTesting -> whenTesting.that(Integer.MAX_VALUE).isNotEqualTo((long) Integer.MAX_VALUE));
   }
 
   @Test
   public void overflowBetweenIntegerAndLong_shouldBeDifferent_min() {
-    expectFailureWhenTestingThat(Integer.MIN_VALUE).isEqualTo(Long.MIN_VALUE);
+    expectFailure(whenTesting -> whenTesting.that(Integer.MIN_VALUE).isEqualTo(Long.MIN_VALUE));
   }
 
   @Test
   public void overflowBetweenIntegerAndLong_shouldBeDifferent_max() {
-    expectFailureWhenTestingThat(Integer.MAX_VALUE).isEqualTo(Long.MAX_VALUE);
+    expectFailure(whenTesting -> whenTesting.that(Integer.MAX_VALUE).isEqualTo(Long.MAX_VALUE));
   }
 
   @Test
@@ -143,21 +140,12 @@ public class IntegerSubjectTest extends BaseSubjectTestCase {
   }
 
   private static void assertThatIsWithinFails(int actual, int tolerance, int expected) {
-    ExpectFailure.SimpleSubjectBuilderCallback<IntegerSubject, Integer> callback =
-        new ExpectFailure.SimpleSubjectBuilderCallback<IntegerSubject, Integer>() {
-          @Override
-          public void invokeAssertion(SimpleSubjectBuilder<IntegerSubject, Integer> expect) {
-            expect.that(actual).isWithin(tolerance).of(expected);
-          }
-        };
-    AssertionError failure = expectFailure(callback);
-    assertThat(failure)
-        .factKeys()
-        .containsExactly("expected", "but was", "outside tolerance")
-        .inOrder();
-    assertThat(failure).factValue("expected").isEqualTo(Integer.toString(expected));
-    assertThat(failure).factValue("but was").isEqualTo(Integer.toString(actual));
-    assertThat(failure).factValue("outside tolerance").isEqualTo(Integer.toString(tolerance));
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isWithin(tolerance).of(expected));
+    assertThat(e).factKeys().containsExactly("expected", "but was", "outside tolerance").inOrder();
+    assertThat(e).factValue("expected").isEqualTo(formatNumericValue(expected));
+    assertThat(e).factValue("but was").isEqualTo(formatNumericValue(actual));
+    assertThat(e).factValue("outside tolerance").isEqualTo(formatNumericValue(tolerance));
   }
 
   @Test
@@ -183,64 +171,39 @@ public class IntegerSubjectTest extends BaseSubjectTestCase {
   }
 
   private static void assertThatIsNotWithinFails(int actual, int tolerance, int expected) {
-    ExpectFailure.SimpleSubjectBuilderCallback<IntegerSubject, Integer> callback =
-        new ExpectFailure.SimpleSubjectBuilderCallback<IntegerSubject, Integer>() {
-          @Override
-          public void invokeAssertion(SimpleSubjectBuilder<IntegerSubject, Integer> expect) {
-            expect.that(actual).isNotWithin(tolerance).of(expected);
-          }
-        };
-    AssertionError failure = expectFailure(callback);
-    assertThat(failure).factValue("expected not to be").isEqualTo(Integer.toString(expected));
-    assertThat(failure).factValue("within tolerance").isEqualTo(Integer.toString(tolerance));
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isNotWithin(tolerance).of(expected));
+    assertThat(e).factValue("expected not to be").isEqualTo(formatNumericValue(expected));
+    assertThat(e).factValue("within tolerance").isEqualTo(formatNumericValue(tolerance));
   }
 
   @Test
   public void isWithinNegativeTolerance() {
-    isWithinNegativeToleranceThrowsIAE(0, -10, 5);
-    isWithinNegativeToleranceThrowsIAE(0, -10, 20);
-    isNotWithinNegativeToleranceThrowsIAE(0, -10, 5);
-    isNotWithinNegativeToleranceThrowsIAE(0, -10, 20);
+    isWithinNegativeToleranceFails(0, -10, 0);
+    isWithinNegativeToleranceFails(0, -10, 0);
+    isNotWithinNegativeToleranceFails(0, -10, 0);
+    isNotWithinNegativeToleranceFails(0, -10, 0);
   }
 
-  private static void isWithinNegativeToleranceThrowsIAE(int actual, int tolerance, int expected) {
-    try {
-      assertThat(actual).isWithin(tolerance).of(expected);
-      fail("Expected IllegalArgumentException to be thrown but wasn't");
-    } catch (IllegalArgumentException iae) {
-      assertThat(iae)
-          .hasMessageThat()
-          .isEqualTo("tolerance (" + tolerance + ") cannot be negative");
-    }
+  private static void isWithinNegativeToleranceFails(int actual, int tolerance, int expected) {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isWithin(tolerance).of(expected));
+    assertFailureKeys(
+        e,
+        "could not perform approximate-equality check because tolerance was negative",
+        "expected",
+        "was",
+        "tolerance");
   }
 
-  private static void isNotWithinNegativeToleranceThrowsIAE(
-      int actual, int tolerance, int expected) {
-    try {
-      assertThat(actual).isNotWithin(tolerance).of(expected);
-      fail("Expected IllegalArgumentException to be thrown but wasn't");
-    } catch (IllegalArgumentException iae) {
-      assertThat(iae)
-          .hasMessageThat()
-          .isEqualTo("tolerance (" + tolerance + ") cannot be negative");
-    }
-  }
-
-  private static final Subject.Factory<IntegerSubject, Integer> INTEGER_SUBJECT_FACTORY =
-      new Subject.Factory<IntegerSubject, Integer>() {
-        @Override
-        public IntegerSubject createSubject(FailureMetadata metadata, Integer that) {
-          return new IntegerSubject(metadata, that);
-        }
-      };
-
-  @CanIgnoreReturnValue
-  private static AssertionError expectFailure(
-      SimpleSubjectBuilderCallback<IntegerSubject, Integer> callback) {
-    return ExpectFailure.expectFailureAbout(INTEGER_SUBJECT_FACTORY, callback);
-  }
-
-  private IntegerSubject expectFailureWhenTestingThat(Integer actual) {
-    return expectFailure.whenTesting().that(actual);
+  private static void isNotWithinNegativeToleranceFails(int actual, int tolerance, int expected) {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that(actual).isNotWithin(tolerance).of(expected));
+    assertFailureKeys(
+        e,
+        "could not perform approximate-equality check because tolerance was negative",
+        "expected",
+        "was",
+        "tolerance");
   }
 }

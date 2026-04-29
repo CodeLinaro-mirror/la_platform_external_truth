@@ -16,10 +16,12 @@
 package com.google.common.truth;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.base.Suppliers.memoize;
-import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.truth.DiffUtils.generateUnifiedDiff;
 import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.makeMessage;
+import static com.google.common.truth.SneakyThrows.sneakyThrow;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
@@ -27,7 +29,7 @@ import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
-import java.lang.reflect.Constructor;
+import com.google.errorprone.annotations.Keep;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -39,41 +41,23 @@ import org.junit.rules.TestRule;
 /**
  * Extracted routines that need to be swapped in for GWT, to allow for minimal deltas between the
  * GWT and non-GWT version.
- *
- * @author Christian Gruber (cgruber@google.com)
  */
 final class Platform {
   private Platform() {}
 
-  /** Returns true if the instance is assignable to the type Clazz. */
+  /** Returns true if the instance is assignable to the type {@code clazz}. */
   static boolean isInstanceOfType(Object instance, Class<?> clazz) {
     return clazz.isInstance(instance);
   }
 
-  /** Determines if the given subject contains a match for the given regex. */
+  /** Determines if the given actual value contains a match for the given regex. */
   static boolean containsMatch(String actual, String regex) {
     return Pattern.compile(regex).matcher(actual).find();
   }
 
-  /**
-   * Returns an array containing all the exceptions that were suppressed to deliver the given
-   * exception. If suppressed exceptions are not supported (pre-Java 1.7), an empty array will be
-   * returned.
-   */
-  static Throwable[] getSuppressed(Throwable throwable) {
-    try {
-      Method getSuppressed = throwable.getClass().getMethod("getSuppressed");
-      return (Throwable[]) checkNotNull(getSuppressed.invoke(throwable));
-    } catch (NoSuchMethodException e) {
-      return new Throwable[0];
-    } catch (IllegalAccessException e) {
-      // We're calling a public method on a public class.
-      throw newLinkageError(e);
-    } catch (InvocationTargetException e) {
-      throwIfUnchecked(e.getCause());
-      // getSuppressed has no `throws` clause.
-      throw newLinkageError(e);
-    }
+  /** Determines if the given actual value is fully matched by the given regex. */
+  static boolean matches(String actual, String regex) {
+    return actual.matches(regex);
   }
 
   static void cleanStackTrace(Throwable throwable) {
@@ -114,7 +98,6 @@ final class Platform {
        * would do no good there, anyway, since ASM won't find any .class files to load under
        * Android. Perhaps R8 will even omit ASM automatically once it detects that it's "unused?")
        *
-       * TODO(cpovirk): Add a test that runs R8 without ASM present.
        */
       String clazz =
           Joiner.on('.').join("com", "google", "common", "truth", "ActualValueInference");
@@ -122,15 +105,10 @@ final class Platform {
           Class.forName(clazz)
               .getDeclaredMethod("describeActualValue", String.class, String.class, int.class)
               .invoke(null, top.getClassName(), top.getMethodName(), top.getLineNumber());
-    } catch (IllegalAccessException
-        | InvocationTargetException
-        | NoSuchMethodException
-        | ClassNotFoundException
-        | LinkageError
-        | RuntimeException e) {
+    } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
       // Some possible reasons:
-      // - Inside Google, we omit ActualValueInference entirely under Android.
-      // - Outside Google, someone is running without ASM on the classpath.
+      // - Someone has omitted ASM from the classpath.
+      // - An optimizer has stripped ActualValueInference (though it's unusual to optimize tests).
       // - There's a bug.
       // - We don't handle a new bytecode feature.
       // TODO(cpovirk): Log a warning, at least for non-ClassNotFoundException, non-LinkageError?
@@ -140,9 +118,9 @@ final class Platform {
 
   private static final String DIFF_KEY = "diff (-expected +actual)";
 
-  static @Nullable ImmutableList<Fact> makeDiff(String expected, String actual) {
-    ImmutableList<String> expectedLines = splitLines(expected);
-    ImmutableList<String> actualLines = splitLines(actual);
+  static @Nullable List<Fact> makeDiff(String expected, String actual) {
+    List<String> expectedLines = splitLines(expected);
+    List<String> actualLines = splitLines(actual);
     List<String> unifiedDiff =
         generateUnifiedDiff(expectedLines, actualLines, /* contextSize= */ 3);
     if (unifiedDiff.isEmpty()) {
@@ -157,32 +135,62 @@ final class Platform {
     return ImmutableList.of(fact(DIFF_KEY, result));
   }
 
-  private static ImmutableList<String> splitLines(String s) {
-    // splitToList is @Beta, so we avoid it.
-    return ImmutableList.copyOf(Splitter.onPattern("\r?\n").split(s));
+  private static List<String> splitLines(String s) {
+    return Splitter.on(NEWLINE_PATTERN).splitToList(s);
   }
 
-  abstract static class PlatformComparisonFailure extends ComparisonFailure {
+  private static final Pattern NEWLINE_PATTERN = Pattern.compile("\r?\n");
+
+  /**
+   * A {@code ComparisonFailure} composed of structured {@link Fact} instances and other string
+   * messages.
+   */
+  @SuppressWarnings("OverrideThrowableToString") // We intentionally hide the class name.
+  @Keep
+  private static final class ComparisonFailureWithFacts extends ComparisonFailure
+      implements ErrorWithFacts {
     private final String message;
+    private final List<Fact> facts;
 
-    PlatformComparisonFailure(
-        String message, String expected, String actual, @Nullable Throwable cause) {
-      super(message, expected, actual);
-      this.message = message;
-
+    private ComparisonFailureWithFacts(
+        String message,
+        List<Fact> facts,
+        String expected,
+        String actual,
+        @Nullable Throwable cause) {
+      super(message, checkNotNull(expected), checkNotNull(actual));
+      this.message = checkNotNull(message);
+      this.facts = checkNotNull(facts);
       initCause(cause);
     }
 
     @Override
-    public final String getMessage() {
+    public List<Fact> facts() {
+      return facts;
+    }
+
+    @Override
+    public String getMessage() {
       return message;
     }
 
     // To avoid printing the class name before the message.
     // TODO(cpovirk): Write a test that fails without this. Ditto for SimpleAssertionError.
     @Override
-    public final String toString() {
+    public String toString() {
       return checkNotNull(getLocalizedMessage());
+    }
+
+    @Keep
+    @UsedByReflection
+    static ComparisonFailureWithFacts create(
+        List<String> messages,
+        List<Fact> facts,
+        String expected,
+        String actual,
+        @Nullable Throwable cause) {
+      return new ComparisonFailureWithFacts(
+          makeMessage(messages, facts), facts, expected, actual, cause);
     }
   }
 
@@ -194,8 +202,14 @@ final class Platform {
     return Float.toString(value);
   }
 
-  /** Turns a non-double, non-float object into a string. */
-  static String stringValueOfNonFloatingPoint(@Nullable Object o) {
+  /**
+   * Turns an object (typically an expected or actual value) into a string for use in a failure
+   * message. Note that this method does not handle floating-point values the way we want on all
+   * platforms, so some callers may wish to use {@link #doubleToString} or {@link #floatToString}
+   * where appropriate.
+   */
+  @SuppressWarnings("GoogleInternalApi")
+  static String stringValueForFailure(@Nullable Object o) {
     return String.valueOf(o);
   }
 
@@ -204,20 +218,17 @@ final class Platform {
     return Throwables.getStackTraceAsString(throwable);
   }
 
-  /** Tests if current platform is Android. */
-  static boolean isAndroid() {
-    return checkNotNull(System.getProperty("java.runtime.name", "")).contains("Android");
-  }
-
   /**
-   * Wrapping interface of {@link TestRule} to be used within truth.
+   * A platform-configurable "typedef" for {@link TestRule} to be used within Truth.
    *
-   * <p>Note that the sole purpose of this interface is to allow it to be swapped in GWT
-   * implementation.
+   * <p>Note that the sole purpose of this interface is to allow it to be swapped out for platforms
+   * that don't include JUnit {@link TestRule} support.
    */
   interface JUnitTestRule extends TestRule {}
 
-  static final String EXPECT_FAILURE_WARNING_IF_GWT = "";
+  static String expectFailureWarningIfWeb() {
+    return "";
+  }
 
   // TODO(cpovirk): Share code with StackTraceCleaner?
   private static boolean isInferDescriptionDisabled() {
@@ -231,66 +242,72 @@ final class Platform {
     }
   }
 
+  static boolean forceInferDescription() {
+    try {
+      return Boolean.parseBoolean(
+          System.getProperty("com.google.common.truth.force_infer_description"));
+    } catch (SecurityException e) {
+      return false;
+    }
+  }
+
   static AssertionError makeComparisonFailure(
-      ImmutableList<String> messages,
-      ImmutableList<Fact> facts,
+      List<String> messages,
+      List<Fact> facts,
       String expected,
       String actual,
       @Nullable Throwable cause) {
     Class<?> comparisonFailureClass;
     try {
-      comparisonFailureClass = Class.forName("com.google.common.truth.ComparisonFailureWithFacts");
+      comparisonFailureClass =
+          Class.forName("com.google.common.truth.Platform$ComparisonFailureWithFacts");
     } catch (LinkageError | ClassNotFoundException probablyJunitNotOnClasspath) {
       /*
-       * LinkageError makes sense, but ClassNotFoundException shouldn't happen:
-       * ComparisonFailureWithFacts should be there, even if its JUnit 4 dependency is not. But it's
-       * harmless to catch an "impossible" exception, and if someone decides to strip the class out
-       * (perhaps along with Platform.PlatformComparisonFailure, to satisfy a tool that is unhappy
-       * because it can't find the latter's superclass because JUnit 4 is also missing?), presumably
-       * we should still fall back to a plain AssertionError.
+       * We're using reflection because ComparisonFailureWithFacts depends on JUnit 4, a dependency
+       * that we want to allow open-source users to exclude:
+       * https://github.com/google/truth/issues/333
        *
-       * TODO(cpovirk): Consider creating and using yet another class like AssertionErrorWithFacts,
-       * not actually extending ComparisonFailure but still exposing getExpected() and getActual()
-       * methods.
+       * Even if users do exclude JUnit 4, Truth's ComparisonFailureWithFacts class itself should
+       * still exist; it's only the subsequent class loading that should ever fail. That means that
+       * we should see only LinkageError in practice, not ClassNotFoundException.
+       *
+       * Still, we catch ClassNotFoundException anyway because the compiler makes us. Fortunately,
+       * it's harmless to catch an "impossible" exception, and if someone decides to strip the class
+       * out (perhaps along with Platform.PlatformComparisonFailure, to satisfy a tool that is
+       * unhappy because it can't find the latter's superclass because JUnit 4 is also missing?),
+       * presumably we should still fall back to a plain AssertionError.
        */
-      return new AssertionErrorWithFacts(messages, facts, cause);
+      return AssertionErrorWithFacts.create(messages, facts, cause);
     }
-    Class<? extends AssertionError> asAssertionErrorSubclass =
-        comparisonFailureClass.asSubclass(AssertionError.class);
 
-    Constructor<? extends AssertionError> constructor;
+    Method createMethod;
     try {
-      constructor =
-          asAssertionErrorSubclass.getDeclaredConstructor(
-              ImmutableList.class,
-              ImmutableList.class,
-              String.class,
-              String.class,
-              Throwable.class);
+      createMethod =
+          comparisonFailureClass.getDeclaredMethod(
+              "create", List.class, List.class, String.class, String.class, Throwable.class);
+    } catch (Error e) {
+      if (e.getClass().getName().equals("com.google.j2objc.ReflectionStrippedError")) {
+        return AssertionErrorWithFacts.create(messages, facts, cause);
+      }
+      throw e;
     } catch (NoSuchMethodException e) {
-      // That constructor exists.
+      // Should not happen: the factory method exists.
       throw newLinkageError(e);
     }
 
     try {
-      return constructor.newInstance(messages, facts, expected, actual, cause);
+      return (AssertionError) createMethod.invoke(null, messages, facts, expected, actual, cause);
     } catch (InvocationTargetException e) {
-      throwIfUnchecked(e.getCause());
-      // That constructor has no `throws` clause.
-      throw newLinkageError(e);
-    } catch (InstantiationException e) {
-      // The class is a concrete class.
-      throw newLinkageError(e);
+      // The factory method has no `throws` clause so this will be an unchecked exception anyway.
+      throw sneakyThrow(e.getCause());
     } catch (IllegalAccessException e) {
-      // We're accessing a class from within its package.
+      // Should not happen: we're accessing a package-private method from within its package.
       throw newLinkageError(e);
     }
   }
 
   private static LinkageError newLinkageError(Throwable cause) {
-    LinkageError error = new LinkageError(cause.toString());
-    error.initCause(cause);
-    return error;
+    return new LinkageError(cause.toString(), cause);
   }
 
   static boolean isKotlinRange(Iterable<?> iterable) {
@@ -327,10 +344,10 @@ final class Platform {
       if (e.getCause() instanceof ClassCastException) {
         // icky but no worse than what we normally do for isIn(Iterable)
         return false;
+        // TODO(cpovirk): Should we also look for NullPointerException?
       }
-      throwIfUnchecked(e.getCause());
       // That method has no `throws` clause.
-      throw newLinkageError(e.getCause());
+      throw sneakyThrow(e.getCause());
     } catch (IllegalAccessException e) {
       // We're calling a public method on a public class.
       throw newLinkageError(e);
@@ -354,5 +371,12 @@ final class Platform {
     // TODO(cpovirk): Consider whether to remove instanceof tests under GWT entirely.
     // TODO(cpovirk): Run more Truth tests under GWT, and add tests for this.
     return false;
+  }
+
+  @SuppressWarnings("GoogleInternalApi")
+  static String lenientFormatForFailure(
+          @Nullable String template,
+      @Nullable Object @Nullable ... args) {
+    return lenientFormat(template, args);
   }
 }

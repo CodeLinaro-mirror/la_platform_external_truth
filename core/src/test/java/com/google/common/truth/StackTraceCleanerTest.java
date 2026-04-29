@@ -16,9 +16,11 @@
 package com.google.common.truth;
 
 import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.StackTraceCleaner.cleanStackTrace;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.collect.Range;
+import org.jspecify.annotations.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runner.Runner;
@@ -41,27 +43,27 @@ import org.junit.runners.model.Statement;
  * remove: b/71355096
  */
 @RunWith(JUnit4.class)
-public class StackTraceCleanerTest extends BaseSubjectTestCase {
+public class StackTraceCleanerTest {
   @Test
   public void realWorld() {
     try {
       assertThat(0).isEqualTo(1);
       throw new Error();
-    } catch (AssertionError failure) {
-      assertThat(failure.getStackTrace()).hasLength(1);
+    } catch (AssertionError expected) {
+      assertThat(expected.getStackTrace()).hasLength(1);
     }
 
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(0).isEqualTo(1));
     // ExpectFailure ends up with "extra" frames, but that's probably the right behavior :\
-    AssertionError failure = expectFailure(whenTesting -> whenTesting.that(0).isEqualTo(1));
-    // Currently 3 total frames on the JVM, 4 on Android.
-    assertThat(failure.getStackTrace().length).isIn(Range.closed(3, 4));
+    // The exact number varies based on platform (JVM/Android) and implementation details.
+    assertThat(e.getStackTrace().length).isIn(Range.closed(3, 5));
   }
 
   @Test
   public void emptyTrace() {
     Throwable throwable = createThrowableWithStackTrace();
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace()).isEqualTo(new StackTraceElement[0]);
   }
@@ -78,7 +80,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "com.google.testing.util.Far",
             "com.example.Gar");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -91,20 +93,18 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
 
   @Test
   public void assertionsActuallyUseCleaner() {
-    expectFailure.whenTesting().that(1).isEqualTo(2);
-    assertThat(expectFailure.getFailure().getStackTrace()[0].getClassName())
-        .isEqualTo(getClass().getName());
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that(1).isEqualTo(2));
+    assertThat(e.getStackTrace()[0].getClassName()).isEqualTo(getClass().getName());
   }
 
   @Test
   public void assertionsActuallyUseCleaner_comparisonFailure() {
-    expectFailure.whenTesting().that("1").isEqualTo("2");
-    assertThat(expectFailure.getFailure().getStackTrace()[0].getClassName())
-        .isEqualTo(getClass().getName());
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("1").isEqualTo("2"));
+    assertThat(e.getStackTrace()[0].getClassName()).isEqualTo(getClass().getName());
   }
 
   @Test
-  public void dontCollapseStreaksOfOneFrame() {
+  public void doNotCollapseStreaksOfOneFrame() {
     Throwable throwable =
         createThrowableWithStackTrace(
             "com.example.MyTest",
@@ -117,7 +117,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "com.google.testing.util.Far",
             "com.example.Gar");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -147,7 +147,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "com.google.testing.util.Far",
             "com.example.Jar");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -166,7 +166,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
         createThrowableWithStackTrace(
             "com.google.common.truth.IterableSubject$UsingCorrespondence", "com.example.MyTest");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -190,7 +190,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "java.lang.reflect.JarJar",
             "com.google.testing.junit.Kar");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -208,7 +208,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "com.google.testing.util.ShouldStrip2",
             "com.google.testing.util.ShouldNotStripTest");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -227,7 +227,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "com.google.common.truth.StandardSubjectBuilder",
             "com.google.example.SomeClass");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -245,7 +245,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             "com.google.common.truth.StringSubject",
             "com.google.example.SomeClass");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -263,7 +263,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             SomeStatement.class.getName(),
             "com.google.example.SomeClass");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -280,7 +280,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             SomeStatement.class.getName(),
             "com.google.example.SomeClass");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -299,7 +299,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
             SomeRunner.class.getName(),
             "com.google.example.SomeClass");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -322,11 +322,11 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
     Throwable throwable =
         createThrowableWithStackTrace(
             "com.google.random.Package",
-            // two or more truth frame will trigger string matching mechenism to got it collapsed
+            // two or more truth frame will trigger string matching mechanism to got it collapsed
             "com.google.common.truth.FailureMetadata",
             "com.google.example.SomeClass");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace())
         .isEqualTo(
@@ -345,7 +345,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
     Throwable rootThrowable =
         createThrowableWithStackTrace(cause1, "com.example.Car", "org.junit.FilterMe");
 
-    StackTraceCleaner.cleanStackTrace(rootThrowable);
+    cleanStackTrace(rootThrowable);
 
     assertThat(rootThrowable.getStackTrace()).isEqualTo(createStackTrace("com.example.Car"));
     assertThat(cause1.getStackTrace()).isEqualTo(createStackTrace("com.example.Bar"));
@@ -354,16 +354,13 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
 
   @Test
   public void suppressedThrowablesAreAlsoCleaned() {
-    if (Platform.isAndroid()) {
-      return; // suppressed exceptions aren't supported under Ice Cream Sandwich, where we test
-    }
     Throwable throwable = createThrowableWithStackTrace("com.example.Foo", "org.junit.FilterMe");
     Throwable suppressed1 = createThrowableWithStackTrace("com.example.Bar", "org.junit.FilterMe");
     Throwable suppressed2 = createThrowableWithStackTrace("com.example.Car", "org.junit.FilterMe");
     throwable.addSuppressed(suppressed1);
     throwable.addSuppressed(suppressed2);
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace()).isEqualTo(createStackTrace("com.example.Foo"));
     assertThat(suppressed1.getStackTrace()).isEqualTo(createStackTrace("com.example.Bar"));
@@ -372,9 +369,6 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
 
   @Test
   public void mixedCausingAndSuppressThrowablesAreCleaned() {
-    if (Platform.isAndroid()) {
-      return; // suppressed exceptions aren't supported under Ice Cream Sandwich, where we test
-    }
     Throwable suppressed1 = createThrowableWithStackTrace("com.example.Foo", "org.junit.FilterMe");
     Throwable cause2 = createThrowableWithStackTrace("com.example.Bar", "org.junit.FilterMe");
     Throwable cause1 =
@@ -385,7 +379,7 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
     throwable.addSuppressed(suppressed1);
     throwable.addSuppressed(suppressed2);
 
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace()).isEqualTo(createStackTrace("com.example.Far"));
     assertThat(suppressed1.getStackTrace()).isEqualTo(createStackTrace("com.example.Foo"));
@@ -398,8 +392,8 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
   public void cleaningTraceIsIdempotent() {
     Throwable throwable = createThrowableWithStackTrace("com.example.Foo", "org.junit.FilterMe");
 
-    StackTraceCleaner.cleanStackTrace(throwable);
-    StackTraceCleaner.cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
+    cleanStackTrace(throwable);
 
     assertThat(throwable.getStackTrace()).isEqualTo(createStackTrace("com.example.Foo"));
   }
@@ -409,17 +403,18 @@ public class StackTraceCleanerTest extends BaseSubjectTestCase {
     SelfReferencingThrowable selfReferencingThrowable =
         new SelfReferencingThrowable("com.example.Foo", "org.junit.FilterMe");
 
-    StackTraceCleaner.cleanStackTrace(selfReferencingThrowable);
+    cleanStackTrace(selfReferencingThrowable);
 
     assertThat(selfReferencingThrowable.getStackTrace())
         .isEqualTo(createStackTrace("com.example.Foo"));
   }
 
   private static Throwable createThrowableWithStackTrace(String... classNames) {
-    return createThrowableWithStackTrace(null, classNames);
+    return createThrowableWithStackTrace(/* cause= */ null, classNames);
   }
 
-  private static Throwable createThrowableWithStackTrace(Throwable cause, String... classNames) {
+  private static Throwable createThrowableWithStackTrace(
+      @Nullable Throwable cause, String... classNames) {
     Throwable throwable = new RuntimeException(cause);
     StackTraceElement[] stackTrace = createStackTrace(classNames);
     throwable.setStackTrace(stackTrace);
