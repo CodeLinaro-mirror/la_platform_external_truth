@@ -16,7 +16,7 @@
 package com.google.common.truth;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.Iterables;
 import org.junit.Test;
@@ -28,11 +28,9 @@ import org.junit.runners.JUnit4;
  *
  * <p>These should not be run under j2cl, because the descriptions don't include the expected stack
  * traces there.
- *
- * @author Pete Gillin
  */
 @RunWith(JUnit4.class)
-public final class CorrespondenceExceptionStoreTest extends BaseSubjectTestCase {
+public final class CorrespondenceExceptionStoreTest {
 
   @Test
   public void hasCompareException_empty() {
@@ -50,11 +48,7 @@ public final class CorrespondenceExceptionStoreTest extends BaseSubjectTestCase 
   @Test
   public void describeAsMainCause_empty() {
     Correspondence.ExceptionStore exceptions = Correspondence.ExceptionStore.forIterable();
-    try {
-      exceptions.describeAsMainCause();
-      fail("Expected IllegalStateException");
-    } catch (IllegalStateException expected) {
-    }
+    assertThrows(IllegalStateException.class, () -> exceptions.describeAsMainCause());
   }
 
   @Test
@@ -83,11 +77,10 @@ public final class CorrespondenceExceptionStoreTest extends BaseSubjectTestCase 
 
   /** Adds a somewhat realistic exception from {@link Correspondence#compare} to the given store. */
   private static void addCompareException(Correspondence.ExceptionStore exceptions) {
-    try {
-      boolean unused = TestCorrespondences.WITHIN_10_OF.compare(null, 123);
-    } catch (RuntimeException e) {
-      exceptions.addCompareException(CorrespondenceExceptionStoreTest.class, e, null, 123);
-    }
+    RuntimeException e =
+        assertThrows(
+            RuntimeException.class, () -> TestCorrespondences.WITHIN_10_OF.compare(null, 123));
+    exceptions.addCompareException(CorrespondenceExceptionStoreTest.class, e, null, 123);
   }
 
   /**
@@ -99,10 +92,10 @@ public final class CorrespondenceExceptionStoreTest extends BaseSubjectTestCase 
     assertThat(facts).hasSize(2);
     Fact first = Iterables.get(facts, 0);
     Fact second = Iterables.get(facts, 1);
-    assertThat(first.key).isEqualTo(expectedFirstKey);
-    assertThat(first.value).isNull();
-    assertThat(second.key).isEqualTo("first exception");
-    assertThat(second.value)
+    assertThat(first.getKey()).isEqualTo(expectedFirstKey);
+    assertThat(first.getValue()).isNull();
+    assertThat(second.getKey()).isEqualTo("first exception");
+    assertThat(second.getValue())
         .matches( // an initial statement of the method that threw and the exception type:
             "compare\\(null, 123\\) threw "
                 + "com.google.common.truth.TestCorrespondences\\$NullPointerExceptionFromWithin10Of"

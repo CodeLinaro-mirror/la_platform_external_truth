@@ -21,12 +21,10 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
-import com.google.common.base.Objects;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.truth.Correspondence;
 import com.google.common.truth.extensions.proto.DiffResult.RepeatedField;
@@ -44,10 +42,12 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -280,7 +280,7 @@ final class ProtoTruthMessageDifferencer {
 
     // Can't use an ImmutableMap.Builder because proto wire format could have multiple entries with
     // the same key. Documented behaviour is to use the last seen entry.
-    Map<Object, Object> retVal = Maps.newHashMap();
+    Map<Object, Object> retVal = new HashMap<>();
     for (Object entry : entryMessages) {
       Message message = (Message) entry;
       retVal.put(valueAtFieldNumber(message, 1), valueAtFieldNumber(message, 2));
@@ -340,7 +340,7 @@ final class ProtoTruthMessageDifferencer {
             compareSingularValue(
                 actualValue,
                 expectedValue,
-                /*defaultValue=*/ null,
+                /* defaultValue= */ null,
                 compareValues == FieldScopeResult.EXCLUDED_NONRECURSIVELY,
                 valueFieldDescriptor,
                 indexedName(mapFieldDescriptor, key, keyFieldDescriptor),
@@ -399,22 +399,22 @@ final class ProtoTruthMessageDifferencer {
         builder.addPairResult(
             compareRepeatedFieldElementPair(
                 actualList.get(i),
-                /*expected=*/ null,
+                /* expected= */ null,
                 excludeNonRecursive,
                 fieldDescriptor,
                 i,
-                /*expectedFieldIndex=*/ null,
+                /* expectedFieldIndex= */ null,
                 config));
       }
     }
     for (int j : unmatchedExpected) {
       builder.addPairResult(
           compareRepeatedFieldElementPair(
-              /*actual=*/ null,
+              /* actual= */ null,
               expectedList.get(j),
               excludeNonRecursive,
               fieldDescriptor,
-              /*actualFieldIndex=*/ null,
+              /* actualFieldIndex= */ null,
               j,
               config));
     }
@@ -543,6 +543,7 @@ final class ProtoTruthMessageDifferencer {
     return null;
   }
 
+  @SuppressWarnings("UnnecessaryBoxedVariable") // b/356487410
   private RepeatedField.PairResult compareRepeatedFieldElementPair(
       @Nullable Object actual,
       @Nullable Object expected,
@@ -555,7 +556,7 @@ final class ProtoTruthMessageDifferencer {
         compareSingularValue(
             actual,
             expected,
-            /*defaultValue=*/ null,
+            /* defaultValue= */ null,
             excludeNonRecursive,
             fieldDescriptor,
             "<no field path>",
@@ -580,7 +581,7 @@ final class ProtoTruthMessageDifferencer {
 
   /** Returns a {@link LinkedHashSet} containing the integers in {@code [0, max)}, in order. */
   private static Set<Integer> setForRange(int max) {
-    Set<Integer> set = Sets.newLinkedHashSet();
+    Set<Integer> set = new LinkedHashSet<>();
     for (int i = 0; i < max; i++) {
       set.add(i);
     }
@@ -609,7 +610,7 @@ final class ProtoTruthMessageDifferencer {
           compareSingularValue(
               actual,
               expected,
-              /*defaultValue=*/ null,
+              /* defaultValue= */ null,
               excludeNonRecursive,
               fieldDescriptor,
               indexedName(fieldDescriptor, i),
@@ -646,7 +647,7 @@ final class ProtoTruthMessageDifferencer {
 
   // Replaces 'input' with 'defaultValue' iff input is null and we're ignoring field absence.
   // Otherwise, just returns the input.
-  private <T> T orIfIgnoringFieldAbsence(
+  private static <T> T orIfIgnoringFieldAbsence(
       @Nullable T input, @Nullable T defaultValue, boolean ignoreFieldAbsence) {
     return (input == null && ignoreFieldAbsence) ? defaultValue : input;
   }
@@ -749,7 +750,7 @@ final class ProtoTruthMessageDifferencer {
                 config.floatCorrespondenceMap().get(rootDescriptor, subScopeId)
                 ));
       } else {
-        result.markModifiedIf(!Objects.equal(actual, expected));
+        result.markModifiedIf(!Objects.equals(actual, expected));
       }
     }
 
@@ -768,7 +769,7 @@ final class ProtoTruthMessageDifferencer {
     return singularFieldBuilder.build();
   }
 
-  private boolean doublesEqual(
+  private static boolean doublesEqual(
       double x,
       double y,
       Optional<Correspondence<Number, Number>> correspondence
@@ -780,7 +781,7 @@ final class ProtoTruthMessageDifferencer {
     }
   }
 
-  private boolean floatsEqual(
+  private static boolean floatsEqual(
       float x,
       float y,
       Optional<Correspondence<Number, Number>> correspondence
@@ -935,7 +936,7 @@ final class ProtoTruthMessageDifferencer {
 
     result.markRemovedIf(actual == null);
     result.markAddedIf(expected == null);
-    result.markModifiedIf(!Objects.equal(actual, expected));
+    result.markModifiedIf(!Objects.equals(actual, expected));
 
     SingularField.Builder singularFieldBuilder =
         SingularField.newBuilder()

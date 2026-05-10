@@ -15,42 +15,53 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.collect.Iterables.isEmpty;
 import static com.google.common.collect.Iterables.transform;
+import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Multisets.immutableEntry;
+import static com.google.common.truth.NullnessCasts.uncheckedCastNullableTToT;
+import static com.google.common.truth.Platform.stringValueForFailure;
 
 import com.google.common.base.Equivalence;
 import com.google.common.base.Equivalence.Wrapper;
-import com.google.common.base.Objects;
-import com.google.common.base.Optional;
+import com.google.common.base.VerifyException;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.LinkedHashMultiset;
 import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multiset;
+import java.io.IOException;
+import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.ConcurrentModificationException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.RandomAccess;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import org.jspecify.annotations.Nullable;
 
-/**
- * Utility methods used in {@code Subject} implementors.
- *
- * @author Christian Gruber
- * @author Jens Nyman
- */
+/** Utility methods used in {@link Subject} implementors. */
 final class SubjectUtils {
   private SubjectUtils() {}
 
   static final String HUMAN_UNDERSTANDABLE_EMPTY_STRING = "\"\" (empty String)";
 
-  static <T extends @Nullable Object> List<T> accumulate(T first, T second, T @Nullable ... rest) {
+  static <T extends @Nullable Object> List<T> accumulate(T first, T second, T @Nullable [] rest) {
     // rest should never be deliberately null, so assume that the caller passed null
     // in the third position but intended it to be the third element in the array of values.
     // Javac makes the opposite inference, so handle that here.
@@ -58,21 +69,16 @@ final class SubjectUtils {
     items.add(first);
     items.add(second);
     if (rest == null) {
-      items.add((T) null);
+      /*
+       * This cast is probably not actually safe as used in IterableSubject.UsingCorrespondence. But
+       * that whole API is stuck being type-unsafe unless we re-generify IterableSubject:
+       * b/145689657#comment1.
+       */
+      items.add(uncheckedCastNullableTToT(null));
     } else {
       items.addAll(asList(rest));
     }
     return items;
-  }
-
-  static <T> int countOf(T t, Iterable<T> items) {
-    int count = 0;
-    for (T item : items) {
-      if (t == null ? (item == null) : t.equals(item)) {
-        count++;
-      }
-    }
-    return count;
   }
 
   static String countDuplicates(Iterable<?> items) {
@@ -86,15 +92,15 @@ final class SubjectUtils {
 
   static String entryString(Multiset.Entry<?> entry) {
     int count = entry.getCount();
-    String item = String.valueOf(entry.getElement());
+    String item = stringValueForFailure(entry.getElement());
     return (count > 1) ? item + " [" + count + " copies]" : item;
   }
 
   private static <T extends @Nullable Object> NonHashingMultiset<T> countDuplicatesToMultiset(
       Iterable<T> items) {
-    // We use avoid hashing in case the elements don't have a proper
-    // .hashCode() method (e.g., MessageSet from old versions of protobuf).
-    NonHashingMultiset<T> multiset = new NonHashingMultiset<>();
+    // We avoid hashing the elements in case they don't have a proper hashCode() implementation.
+    // (The prototypical example is MessageSet from old versions of protobuf.)
+    NonHashingMultiset<T> multiset = NonHashingMultiset.create();
     for (T item : items) {
       multiset.add(item);
     }
@@ -102,8 +108,8 @@ final class SubjectUtils {
   }
 
   /**
-   * Makes a String representation of {@code items} with collapsed duplicates and additional class
-   * info.
+   * Makes a String representation of {@code itemsIterable} with collapsed duplicates and additional
+   * class info.
    *
    * <p>Example: {@code countDuplicatesAndAddTypeInfo([1, 2, 2, 3]) == "[1, 2 [3 copies]]
    * (java.lang.Integer)"} and {@code countDuplicatesAndAddTypeInfo([1, 2L]) == "[1
@@ -111,47 +117,42 @@ final class SubjectUtils {
    */
   static String countDuplicatesAndAddTypeInfo(Iterable<?> itemsIterable) {
     Collection<?> items = iterableToCollection(itemsIterable);
-    Optional<String> homogeneousTypeName = getHomogeneousTypeName(items);
+    String homogeneousTypeName = getHomogeneousTypeName(items);
 
-    return homogeneousTypeName.isPresent()
-        ? lenientFormat("%s (%s)", countDuplicates(items), homogeneousTypeName.get())
+    return homogeneousTypeName != null
+        ? lenientFormat("%s (%s)", countDuplicates(items), homogeneousTypeName)
         : countDuplicates(addTypeInfoToEveryItem(items));
   }
 
   /**
-   * Similar to {@link #countDuplicatesAndAddTypeInfo} and {@link #countDuplicates} but (a) only
-   * adds type info if requested and (b) returns a richer object containing the data.
+   * Similar to {@link #countDuplicatesAndAddTypeInfo} and {@link #countDuplicates} but:
+   *
+   * <ul>
+   *   <li>only adds type info if requested
+   *   <li>returns a richer object containing the data
+   * </ul>
    */
   static DuplicateGroupedAndTyped countDuplicatesAndMaybeAddTypeInfoReturnObject(
       Iterable<?> itemsIterable, boolean addTypeInfo) {
     if (addTypeInfo) {
       Collection<?> items = iterableToCollection(itemsIterable);
-      Optional<String> homogeneousTypeName = getHomogeneousTypeName(items);
+      String homogeneousTypeName = getHomogeneousTypeName(items);
 
       NonHashingMultiset<?> valuesWithCountsAndMaybeTypes =
-          homogeneousTypeName.isPresent()
+          homogeneousTypeName != null
               ? countDuplicatesToMultiset(items)
               : countDuplicatesToMultiset(addTypeInfoToEveryItem(items));
-      return new DuplicateGroupedAndTyped(valuesWithCountsAndMaybeTypes, homogeneousTypeName);
+      return DuplicateGroupedAndTyped.create(valuesWithCountsAndMaybeTypes, homogeneousTypeName);
     } else {
-      return new DuplicateGroupedAndTyped(
-          countDuplicatesToMultiset(itemsIterable),
-          /* homogeneousTypeToDisplay= */ Optional.<String>absent());
+      return DuplicateGroupedAndTyped.create(
+          countDuplicatesToMultiset(itemsIterable), /* homogeneousTypeToDisplay= */ null);
     }
   }
 
   private static final class NonHashingMultiset<E extends @Nullable Object> {
-    /*
-     * This ought to be static, but the generics are easier when I can refer to <E>. We still want
-     * an Entry<?> so that entrySet() can return Iterable<Entry<?>> instead of Iterable<Entry<E>>.
-     * That way, it can be returned directly from DuplicateGroupedAndTyped.entrySet() without our
-     * having to generalize *its* return type to Iterable<? extends Entry<?>>.
-     */
-    private Multiset.Entry<?> unwrapKey(Multiset.Entry<Wrapper<E>> input) {
-      return immutableEntry(input.getElement().get(), input.getCount());
-    }
-
     private final Multiset<Wrapper<E>> contents = LinkedHashMultiset.create();
+
+    private NonHashingMultiset() {}
 
     void add(E element) {
       contents.add(EQUALITY_WITHOUT_USING_HASH_CODE.wrap(element));
@@ -183,11 +184,21 @@ final class SubjectUtils {
       return withBrackets.substring(1, withBrackets.length() - 1);
     }
 
+    /*
+     * This ought to be static, but the generics are easier when I can refer to <E>. We still want
+     * an Entry<?> so that entrySet() can return Iterable<Entry<?>> instead of Iterable<Entry<E>>.
+     * That way, it can be returned directly from DuplicateGroupedAndTyped.entrySet() without our
+     * having to generalize *its* return type to Iterable<? extends Entry<?>>.
+     */
+    private Multiset.Entry<?> unwrapKey(Multiset.Entry<Wrapper<E>> input) {
+      return immutableEntry(input.getElement().get(), input.getCount());
+    }
+
     private static final Equivalence<Object> EQUALITY_WITHOUT_USING_HASH_CODE =
         new Equivalence<Object>() {
           @Override
           protected boolean doEquivalent(Object a, Object b) {
-            return Objects.equal(a, b);
+            return Objects.equals(a, b);
           }
 
           @Override
@@ -195,6 +206,10 @@ final class SubjectUtils {
             return 0; // slow but hopefully not much worse than what we get with a flat list
           }
         };
+
+    static <E extends @Nullable Object> NonHashingMultiset<E> create() {
+      return new NonHashingMultiset<>();
+    }
   }
 
   /**
@@ -207,13 +222,17 @@ final class SubjectUtils {
    * elements and even to output different elements on different lines.
    */
   static final class DuplicateGroupedAndTyped {
-    final NonHashingMultiset<?> valuesAndMaybeTypes;
-    final Optional<String> homogeneousTypeToDisplay;
+    private final NonHashingMultiset<?> valuesAndMaybeTypes;
+    private final @Nullable String homogeneousTypeToDisplay;
 
-    DuplicateGroupedAndTyped(
-        NonHashingMultiset<?> valuesAndMaybeTypes, Optional<String> homogeneousTypeToDisplay) {
+    private DuplicateGroupedAndTyped(
+        NonHashingMultiset<?> valuesAndMaybeTypes, @Nullable String homogeneousTypeToDisplay) {
       this.valuesAndMaybeTypes = valuesAndMaybeTypes;
       this.homogeneousTypeToDisplay = homogeneousTypeToDisplay;
+    }
+
+    @Nullable String getHomogeneousTypeToDisplay() {
+      return homogeneousTypeToDisplay;
     }
 
     int totalCopies() {
@@ -230,33 +249,21 @@ final class SubjectUtils {
 
     @Override
     public String toString() {
-      return homogeneousTypeToDisplay.isPresent()
-          ? valuesAndMaybeTypes + " (" + homogeneousTypeToDisplay.get() + ")"
+      return homogeneousTypeToDisplay != null
+          ? valuesAndMaybeTypes + " (" + homogeneousTypeToDisplay + ")"
           : valuesAndMaybeTypes.toString();
     }
-  }
 
-  /**
-   * Makes a String representation of {@code items} with additional class info.
-   *
-   * <p>Example: {@code iterableToStringWithTypeInfo([1, 2]) == "[1, 2] (java.lang.Integer)"} and
-   * {@code iterableToStringWithTypeInfo([1, 2L]) == "[1 (java.lang.Integer), 2 (java.lang.Long)]"}.
-   */
-  static String iterableToStringWithTypeInfo(Iterable<?> itemsIterable) {
-    Collection<?> items = iterableToCollection(itemsIterable);
-    Optional<String> homogeneousTypeName = getHomogeneousTypeName(items);
-
-    if (homogeneousTypeName.isPresent()) {
-      return lenientFormat("%s (%s)", items, homogeneousTypeName.get());
-    } else {
-      return addTypeInfoToEveryItem(items).toString();
+    static DuplicateGroupedAndTyped create(
+        NonHashingMultiset<?> valuesAndMaybeTypes, @Nullable String homogeneousTypeToDisplay) {
+      return new DuplicateGroupedAndTyped(valuesAndMaybeTypes, homogeneousTypeToDisplay);
     }
   }
 
   /**
    * Returns a new collection containing all elements in {@code items} for which there exists at
-   * least one element in {@code itemsToCheck} that has the same {@code toString()} value without
-   * being equal.
+   * least one element in {@code itemsToCheck} that has the same {@link String#valueOf(Object)}
+   * value without being equal.
    *
    * <p>Example: {@code retainMatchingToString([1L, 2L, 2L], [2, 3]) == [2L, 2L]}
    */
@@ -264,13 +271,14 @@ final class SubjectUtils {
       Iterable<?> items, Iterable<?> itemsToCheck) {
     ListMultimap<String, @Nullable Object> stringValueToItemsToCheck = ArrayListMultimap.create();
     for (Object itemToCheck : itemsToCheck) {
-      stringValueToItemsToCheck.put(String.valueOf(itemToCheck), itemToCheck);
+      stringValueToItemsToCheck.put(stringValueForFailure(itemToCheck), itemToCheck);
     }
 
-    List<@Nullable Object> result = Lists.newArrayList();
+    List<@Nullable Object> result = new ArrayList<>();
     for (Object item : items) {
-      for (Object itemToCheck : stringValueToItemsToCheck.get(String.valueOf(item))) {
-        if (!Objects.equal(itemToCheck, item)) {
+      for (Object itemToCheck : stringValueToItemsToCheck.get(stringValueForFailure(item))) {
+        // This approach avoids hashing the items themselves.
+        if (!Objects.equals(itemToCheck, item)) {
           result.add(item);
           break;
         }
@@ -281,15 +289,15 @@ final class SubjectUtils {
 
   /**
    * Returns true if there is a pair of an item from {@code items1} and one in {@code items2} that
-   * has the same {@code toString()} value without being equal.
+   * has the same {@link String#valueOf(Object)} value without being equal.
    *
    * <p>Example: {@code hasMatchingToStringPair([1L, 2L], [1]) == true}
    */
   static boolean hasMatchingToStringPair(Iterable<?> items1, Iterable<?> items2) {
-    if (isEmpty(items1) || isEmpty(items2)) {
-      return false; // Bail early to avoid calling hashCode() on the elements unnecessarily.
-    }
-    return !retainMatchingToString(items1, items2).isEmpty();
+    // Bail early for empty iterables to avoid calling hashCode() on the elements unnecessarily.
+    return !isEmpty(items1)
+        && !isEmpty(items2)
+        && !retainMatchingToString(items1, items2).isEmpty();
   }
 
   static String objectToTypeName(@Nullable Object item) {
@@ -305,16 +313,19 @@ final class SubjectUtils {
 
       return lenientFormat("Map.Entry<%s, %s>", objectToTypeName(entry.getKey()), valueTypeName);
     } else {
-      return item.getClass().getName();
+      return longName(item.getClass());
     }
   }
 
   /**
-   * Returns the name of the single type of all given items or {@link Optional#absent()} if no such
-   * type exists.
+   * Returns the name of the single type of all given items or {@code null} if no such type exists.
    */
-  private static Optional<String> getHomogeneousTypeName(Iterable<?> items) {
-    Optional<String> homogeneousTypeName = Optional.absent();
+  private static @Nullable String getHomogeneousTypeName(Iterable<?> items) {
+    /*
+     * TODO(cpovirk): If we remove the null case below, just collect all the type names to a Set and
+     * return singleOrNull()?
+     */
+    String homogeneousTypeName = null;
     for (Object item : items) {
       if (item == null) {
         /*
@@ -322,58 +333,50 @@ final class SubjectUtils {
          * likely, we could have exactly one null, which is still homogeneous. Arguably it's weird
          * to call a single element "homogeneous" at all, but that's not specific to null.
          */
-        return Optional.absent();
-      } else if (!homogeneousTypeName.isPresent()) {
+        return null;
+      } else if (homogeneousTypeName == null) {
         // This is the first item
-        homogeneousTypeName = Optional.of(objectToTypeName(item));
-      } else if (!objectToTypeName(item).equals(homogeneousTypeName.get())) {
+        homogeneousTypeName = objectToTypeName(item);
+      } else if (!objectToTypeName(item).equals(homogeneousTypeName)) {
         // items is a heterogeneous collection
-        return Optional.absent();
+        return null;
       }
     }
     return homogeneousTypeName;
   }
 
   private static List<String> addTypeInfoToEveryItem(Iterable<?> items) {
-    List<String> itemsWithTypeInfo = Lists.newArrayList();
+    List<String> itemsWithTypeInfo = new ArrayList<>();
     for (Object item : items) {
       itemsWithTypeInfo.add(lenientFormat("%s (%s)", item, objectToTypeName(item)));
     }
     return itemsWithTypeInfo;
   }
 
-  static <T extends @Nullable Object> Collection<T> iterableToCollection(
-      @Nullable Iterable<T> iterable) {
-    // TODO(cpovirk): For null inputs, produce a better exception message (ideally in callers).
-    checkNotNull(iterable);
-    if (iterable instanceof Collection) {
-      // Should be safe to assume that any Iterable implementing Collection isn't a one-shot
-      // iterable, right? I sure hope so.
-      return (Collection<T>) iterable;
-    } else {
-      return Lists.newArrayList(iterable);
-    }
+  static <T extends @Nullable Object> Collection<T> iterableToCollection(Iterable<T> iterable) {
+    return iterable instanceof Collection
+        // Should be safe to assume that any Iterable implementing Collection isn't a one-shot
+        // iterable, right? I sure hope so.
+        ? (Collection<T>) iterable
+        : newArrayList(iterable);
   }
 
   static <T extends @Nullable Object> List<T> iterableToList(Iterable<T> iterable) {
-    if (iterable instanceof List) {
-      return (List<T>) iterable;
-    } else {
-      return Lists.newArrayList(iterable);
-    }
+    return iterable instanceof List ? (List<T>) iterable : newArrayList(iterable);
   }
 
   /**
-   * Returns an iterable with all empty strings replaced by a non-empty human understandable
-   * indicator for an empty string.
+   * Returns an {@link Iterable} with each empty {@link String} replaced by a non-empty human
+   * understandable indicator for an empty {@link String}.
    *
-   * <p>Returns the given iterable if it contains no empty strings.
+   * @return a new {@link Iterable} with each empty {@link String} replaced or the given {@link
+   *     Iterable} if it contains no empty {@link String}
    */
   static <T extends @Nullable Object> Iterable<T> annotateEmptyStrings(Iterable<T> items) {
     if (Iterables.contains(items, "")) {
-      List<T> annotatedItems = Lists.newArrayList();
+      List<T> annotatedItems = new ArrayList<>();
       for (T item : items) {
-        if (Objects.equal(item, "")) {
+        if (Objects.equals(item, "")) {
           // This is a safe cast because know that at least one instance of T (this item) is a
           // String.
           @SuppressWarnings("unchecked")
@@ -389,24 +392,124 @@ final class SubjectUtils {
     }
   }
 
+  private static final ImmutableMap<Class<?>, String> CLASS_TO_NAME = makeClassToNameMap();
+
+  /*
+   * The LinkedHash* classes are typealiases for the Hash* classes under
+   * Kotlin/Native, so they're equal at runtime there.
+   */
+  @SuppressWarnings("EqualsIncompatibleType")
+  private static ImmutableMap<Class<?>, String> makeClassToNameMap() {
+    ImmutableMap.Builder<Class<?>, String> b = ImmutableMap.builder();
+    // Part 1:
+    // entries from https://kotlinlang.org/docs/java-interop.html#mapped-types
+    b.put(Byte.class, "Byte");
+    b.put(Short.class, "Short");
+    b.put(Integer.class, "Integer");
+    b.put(Long.class, "Long");
+    b.put(Character.class, "Character");
+    b.put(Float.class, "Float");
+    b.put(Double.class, "Double");
+    b.put(Boolean.class, "Boolean");
+    b.put(Object.class, "Object");
+    b.put(Cloneable.class, "Cloneable");
+    b.put(Comparable.class, "Comparable");
+    b.put(Enum.class, "Enum");
+    b.put(Annotation.class, "Annotation");
+    b.put(CharSequence.class, "CharSequence");
+    b.put(String.class, "String");
+    b.put(Number.class, "Number");
+    b.put(Throwable.class, "Throwable");
+    b.put(Exception.class, "Exception");
+    // TODO(cpovirk): What do we do about collections, with their Foo-MutableFoo split?
+
+    // Part 2:
+    // results for "public actual typealias", minus J2CL-incompatible CharacterCodingException
+    b.put(Error.class, "Error");
+    b.put(RuntimeException.class, "RuntimeException");
+    b.put(IllegalArgumentException.class, "IllegalArgumentException");
+    b.put(IllegalStateException.class, "IllegalStateException");
+    b.put(IndexOutOfBoundsException.class, "IndexOutOfBoundsException");
+    b.put(UnsupportedOperationException.class, "UnsupportedOperationException");
+    b.put(ArithmeticException.class, "ArithmeticException");
+    b.put(NumberFormatException.class, "NumberFormatException");
+    b.put(NullPointerException.class, "NullPointerException");
+    b.put(ClassCastException.class, "ClassCastException");
+    b.put(AssertionError.class, "AssertionError");
+    b.put(NoSuchElementException.class, "NoSuchElementException");
+    b.put(ConcurrentModificationException.class, "ConcurrentModificationException");
+    b.put(Comparator.class, "Comparator");
+    b.put(AutoCloseable.class, "AutoCloseable");
+    b.put(RandomAccess.class, "RandomAccess");
+    b.put(ArrayList.class, "ArrayList");
+    b.put(HashMap.class, "HashMap");
+    //noinspection ConstantConditions
+    if (!LinkedHashMap.class.equals(HashMap.class)) {
+      b.put(LinkedHashMap.class, "LinkedHashMap");
+    }
+    b.put(HashSet.class, "HashSet");
+    //noinspection ConstantConditions
+    if (!LinkedHashSet.class.equals(HashSet.class)) {
+      b.put(LinkedHashSet.class, "LinkedHashSet");
+    }
+    b.put(CancellationException.class, "CancellationException");
+    b.put(Appendable.class, "Appendable");
+    b.put(StringBuilder.class, "StringBuilder");
+
+    // Part 3:
+    // other types that commonly appear in instanceOf assertions
+    b.put(TimeoutException.class, "TimeoutException");
+    b.put(ExecutionException.class, "ExecutionException");
+    b.put(InterruptedException.class, "InterruptedException");
+    b.put(IOException.class, "IOException");
+    b.put(VerifyException.class, "VerifyException");
+    return b.buildOrThrow();
+  }
+
+  static String longName(Class<?> clazz) {
+    String name = CLASS_TO_NAME.get(clazz);
+    if (name != null) {
+      return name;
+    }
+    Class<?> arrayComponentType = clazz.getComponentType();
+    if (arrayComponentType != null) {
+      return longName(arrayComponentType) + "[]";
+    }
+    return firstNonNull(clazz.getCanonicalName(), clazz.getName());
+  }
+
   @SafeVarargs
   static <E> ImmutableList<E> concat(Iterable<? extends E>... inputs) {
     return ImmutableList.copyOf(Iterables.concat(inputs));
   }
 
-  static <E> ImmutableList<E> append(E[] array, E object) {
-    return new ImmutableList.Builder<E>().add(array).add(object).build();
+  static <E> ImmutableList<E> append(E[] array, E e) {
+    return ImmutableList.<E>builderWithExpectedSize(array.length + 1).add(array).add(e).build();
   }
 
-  static <E> ImmutableList<E> append(ImmutableList<? extends E> list, E object) {
-    return new ImmutableList.Builder<E>().addAll(list).add(object).build();
+  static <E> ImmutableList<E> append(ImmutableList<? extends E> list, E e) {
+    return ImmutableList.<E>builderWithExpectedSize(list.size() + 1).addAll(list).add(e).build();
   }
 
   static <E> ImmutableList<E> sandwich(E first, E[] array, E last) {
-    return new ImmutableList.Builder<E>().add(first).add(array).add(last).build();
+    return ImmutableList.<E>builderWithExpectedSize(array.length + 2)
+        .add(first)
+        .add(array)
+        .add(last)
+        .build();
   }
 
-  @SuppressWarnings("nullness") // TODO: b/316358623 - Remove suppression after fixing checker
+  /**
+   * Performs an unchecked conversion from a varargs array to a {@link List}, treating a null array
+   * from {@code caller(null)} as a single null element.
+   */
+  static <E extends @Nullable Object> List<E> listifyNullableVarargs(
+      @Nullable E @Nullable [] expected) {
+    return expected == null ? asList((E) null) : asList(expected);
+  }
+
+  // TODO: b/316358623 - Inline this helper method after fixing our nullness checker to not need it.
+  @SuppressWarnings("nullness") // the aforementioned checker bug
   static <E extends @Nullable Object> List<E> asList(E... a) {
     return Arrays.asList(a);
   }

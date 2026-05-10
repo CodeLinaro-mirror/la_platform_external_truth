@@ -15,33 +15,33 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.truth.SubjectUtils.longName;
 
 import com.google.common.annotations.GwtIncompatible;
 import org.jspecify.annotations.Nullable;
 
-/**
- * Propositions for {@link Class} subjects.
- *
- * @author Kurt Alfred Kluever
- */
+/** A subject for {@link Class} values. */
 @GwtIncompatible("reflection")
 @J2ktIncompatible
 public final class ClassSubject extends Subject {
   private final @Nullable Class<?> actual;
 
-  ClassSubject(FailureMetadata metadata, @Nullable Class<?> o) {
-    super(metadata, o);
-    this.actual = o;
+  private ClassSubject(FailureMetadata metadata, @Nullable Class<?> actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
   /**
-   * Fails if this class or interface is not the same as or a subclass or subinterface of, the given
-   * class or interface.
+   * Checks that the actual value is a subclass of the given class. Classes are considered to be
+   * subclasses of themselves.
    */
   public void isAssignableTo(Class<?> clazz) {
-    if (!clazz.isAssignableFrom(checkNotNull(actual))) {
-      failWithActual("expected to be assignable to", clazz.getName());
+    if (actual == null || !clazz.isAssignableFrom(actual)) {
+      failWithActual("expected to be assignable to", longName(clazz));
     }
+  }
+
+  static Factory<ClassSubject, Class<?>> classes() {
+    return ClassSubject::new;
   }
 }

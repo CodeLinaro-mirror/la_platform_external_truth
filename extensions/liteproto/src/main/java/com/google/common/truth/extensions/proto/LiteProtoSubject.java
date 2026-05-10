@@ -19,14 +19,18 @@ package com.google.common.truth.extensions.proto;
 import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
+import static com.google.common.truth.extensions.proto.Platform.getTrimmedToString;
 
-import com.google.common.base.Objects;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.IntegerSubject;
 import com.google.common.truth.Subject;
 import com.google.errorprone.annotations.CheckReturnValue;
+import com.google.j2objc.annotations.J2ObjCIncompatible;
 import com.google.protobuf.MessageLite;
-import java.util.regex.Pattern;
+import java.util.Objects;
+import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -37,6 +41,7 @@ import org.jspecify.annotations.Nullable;
  * detailed comparisons between messages.
  */
 @CheckReturnValue
+@NullMarked
 public class LiteProtoSubject extends Subject {
 
   /**
@@ -59,37 +64,15 @@ public class LiteProtoSubject extends Subject {
    * "equivalent" object. Thus, it will still be accurate for the failure message to be written as
    * if it's talking about the proto itself.
    *
-   * TODO(b/127819891): Use a better API for this if one is addded.
+   * TODO(b/134064106): Use a better API for this if one is addded.
    */
   private final FailureMetadata metadata;
-  private final MessageLite actual;
+  private final @Nullable MessageLite actual;
 
   protected LiteProtoSubject(FailureMetadata failureMetadata, @Nullable MessageLite messageLite) {
     super(failureMetadata, messageLite);
     this.metadata = failureMetadata;
     this.actual = messageLite;
-  }
-
-  // It is wrong to compare protos using their string representations. The MessageLite runtime
-  // deliberately prefixes debug strings with their Object.toString() to discourage string
-  // comparison. However, this reads poorly in tests, and makes it harder to identify differences
-  // from the strings alone. So, we manually strip this prefix.
-  // In case the class names are actually relevant, Subject.isEqualTo() will add them back for us.
-  // TODO(user): Maybe get a way to do this upstream.
-  static String getTrimmedToString(@Nullable MessageLite messageLite) {
-    String subjectString = String.valueOf(messageLite);
-    String trimmedSubjectString = subjectString.trim();
-    if (trimmedSubjectString.startsWith("# ")) {
-      String objectToString =
-          String.format(
-              "# %s@%s",
-              messageLite.getClass().getName(), Integer.toHexString(messageLite.hashCode()));
-      if (trimmedSubjectString.startsWith(objectToString)) {
-        subjectString = trimmedSubjectString.replaceFirst(Pattern.quote(objectToString), "").trim();
-      }
-    }
-
-    return subjectString.isEmpty() ? "[empty proto]" : subjectString;
   }
 
   @Override
@@ -108,7 +91,7 @@ public class LiteProtoSubject extends Subject {
   @Override
   public void isEqualTo(@Nullable Object expected) {
     // TODO(user): Do better here when MessageLite descriptors are available.
-    if (Objects.equal(actual, expected)) {
+    if (Objects.equals(actual, expected)) {
       return;
     }
 
@@ -116,11 +99,14 @@ public class LiteProtoSubject extends Subject {
       super.isEqualTo(expected);
     } else if (actual.getClass() != expected.getClass()) {
       failWithoutActual(
-          simpleFact(
-              lenientFormat(
-                  "Not true that (%s) proto is equal to the expected (%s) object. "
-                      + "They are not of the same class.",
-                  actual.getClass().getName(), expected.getClass().getName())));
+          fact(
+              "expected",
+              expected instanceof MessageLite
+                  ? getTrimmedToString((MessageLite) expected)
+                  : expected),
+          fact("an instance of", expected.getClass().getName()),
+          fact("but was", getTrimmedToString(actual)),
+          fact("an instance of", actual.getClass().getName()));
     } else {
       /*
        * TODO(cpovirk): If we someday let subjects override formatActualOrExpected(), change this
@@ -138,31 +124,23 @@ public class LiteProtoSubject extends Subject {
   }
 
   /**
-   * @deprecated A Builder can never compare equal to a MessageLite instance. Use {@code build()},
-   *     or {@code buildPartial()} on the argument to get a MessageLite for comparison instead. Or,
-   *     if you are passing {@code null}, use {@link #isNull()}.
+   * <b>DO NOT CALL THIS METHOD!</b>. A {@link MessageLite.Builder} will never compare equal to a
+   * MessageLite instance. Use {@code build()}, or {@code buildPartial()} on the argument to get a
+   * MessageLite for comparison instead. Or, if you are passing {@code null}, use {@link #isNull()}.
    */
   /*
-   * TODO(cpovirk): Consider @DoNotCall -- or probably some other static analysis, given the problem
-   * discussed in the rest of this comment.
-   *
-   * The problem: isEqualTo(null) resolves to this overload (since this overload is more specific
-   * than isEqualTo(Object)), so @DoNotCall would break all assertions of that form.
+   * NOTE: we don't actually mark this as deprecated (or @DoNotCall) because isEqualTo(null)
+   * resolves to this overload (since this overload is more specific than isEqualTo(Object)).
    *
    * To address that, we could try also adding something like `<NullT extends Impossible &
    * MessageLite.Builder> void isEqualTo(NullT)` and hoping that isEqualTo(null) would resolve to
    * that instead. That would also have the benefit of making isEqualTo(null) not produce a
    * deprecation warning (though of course people "should" use isNull(): b/17294077). But yuck.
    *
-   * Given the null issue, maybe we should never have added this overload in the first place,
-   * instead adding static analysis specific to MessageLite-MessageLite.Builder comparisons. (Sadly,
-   * we can't remove it now without breaking binary compatibility.)
-   *
-   * Still, we could add static analysis to produce a compile error for isEqualTo(Builder) this even
-   * today, even without using @DoNotCall. And then we could consider removing @Deprecated to stop
-   * spamming the people who call isEqualTo(null).
+   * Given the null issue, maybe we should never have added this overload in the first place!
+   * In cl/839267698, we added static analysis to MessageLite-MessageLite.Builder comparisons.
+   * However, we cannot remove this method without breaking binary compatibility.
    */
-  @Deprecated
   public void isEqualTo(MessageLite.@Nullable Builder builder) {
     isEqualTo((Object) builder);
   }
@@ -175,7 +153,7 @@ public class LiteProtoSubject extends Subject {
 
   @Override
   public void isNotEqualTo(@Nullable Object expected) {
-    if (Objects.equal(actual, expected)) {
+    if (Objects.equals(actual, expected)) {
       if (actual == null) {
         super.isNotEqualTo(expected);
       } else {
@@ -189,17 +167,18 @@ public class LiteProtoSubject extends Subject {
   }
 
   /**
-   * @deprecated A Builder will never compare equal to a MessageLite instance. Use {@code build()},
-   *     or {@code buildPartial()} on the argument to get a MessageLite for comparison instead. Or,
-   *     if you are passing {@code null}, use {@link #isNotNull()}.
+   * <b>DO NOT CALL THIS METHOD!</b>. A {@link MessageLite.Builder} will never compare equal to a
+   * {@link MessageLite} instance. Use {@code build()}, or {@code buildPartial()} on the argument to
+   * get a {@link MessageLite} for comparison instead. Or, if you are passing {@code null}, use
+   * {@link #isNotNull()}.
    */
-  // TODO(cpovirk): Consider @DoNotCall or other static analysis. (See isEqualTo(Builder).)
-  @Deprecated
   public void isNotEqualTo(MessageLite.@Nullable Builder builder) {
     isNotEqualTo((Object) builder);
   }
 
   /** Checks whether the subject is a {@link MessageLite} with no fields set. */
+  @J2ObjCIncompatible
+  @J2ktIncompatible
   public void isEqualToDefaultInstance() {
     if (actual == null) {
       failWithoutActual(
@@ -217,6 +196,8 @@ public class LiteProtoSubject extends Subject {
   }
 
   /** Checks whether the subject is not equivalent to a {@link MessageLite} with no fields set. */
+  @J2ObjCIncompatible
+  @J2ktIncompatible
   public void isNotEqualToDefaultInstance() {
     if (actual != null && actual.equals(actual.getDefaultInstanceForType())) {
       failWithoutActual(
@@ -232,6 +213,9 @@ public class LiteProtoSubject extends Subject {
    * Checks whether the subject has all required fields set. Cannot fail for a proto built with
    * {@code build()}, which itself fails if required fields aren't set.
    */
+  @J2ObjCIncompatible
+  @J2ktIncompatible
+  @GwtIncompatible
   public void hasAllRequiredFields() {
     if (!actual.isInitialized()) {
       // MessageLite doesn't support reflection so this is the best we can do.
@@ -248,6 +232,7 @@ public class LiteProtoSubject extends Subject {
    * <p>Assertions can then be changed on the serialized size, to support checks such as {@code
    * assertThat(myProto).serializedSize().isAtLeast(16)}, etc.
    */
+  @GwtIncompatible
   public IntegerSubject serializedSize() {
     return check("getSerializedSize()").that(actual.getSerializedSize());
   }

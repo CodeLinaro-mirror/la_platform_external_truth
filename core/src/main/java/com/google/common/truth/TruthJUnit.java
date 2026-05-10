@@ -29,15 +29,12 @@ import org.junit.AssumptionViolatedException;
  * import static com.google.common.truth.Truth.assertThat;
  * import static com.google.common.truth.TruthJUnit.assume;
  *
- * public void @Test testFoosAgainstBars {
+ * @Test public void testFoosAgainstBars() {
  *   assume().that(foo).isNotNull();
  *   assume().that(bar).isNotNull();
  *   assertThat(foo.times(bar)).isEqualTo(blah);
  * }
  * }</pre>
- *
- * @author David Saff
- * @author Christian Gruber (cgruber@israfil.net)
  */
 @com.google.common.annotations.GwtIncompatible("JUnit4")
 public final class TruthJUnit {
@@ -49,13 +46,14 @@ public final class TruthJUnit {
                 new AssumptionViolatedException(failure.getMessage(), failure.getCause());
             assumptionViolated.setStackTrace(failure.getStackTrace());
             throw assumptionViolated;
-          });
+          },
+          /* suppressInferDescription= */ true);
 
   /**
    * Begins a call chain with the fluent Truth API. If the check made by the chain fails, it will
    * throw {@link AssumptionViolatedException}.
    */
-  public static final StandardSubjectBuilder assume() {
+  public static StandardSubjectBuilder assume() {
     return ASSUME;
   }
 

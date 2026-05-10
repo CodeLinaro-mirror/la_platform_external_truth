@@ -19,6 +19,7 @@ package com.google.common.truth;
 import static com.google.common.base.Strings.commonPrefix;
 import static com.google.common.base.Strings.commonSuffix;
 import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Platform.makeDiff;
 import static com.google.common.truth.SubjectUtils.concat;
 import static java.lang.Character.isHighSurrogate;
 import static java.lang.Character.isLowSurrogate;
@@ -26,11 +27,12 @@ import static java.lang.Math.max;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Contains part of the code responsible for creating a JUnit {@code ComparisonFailure} (if
- * available) or a plain {@code AssertionError} (if not).
+ * available) or a plain {@link AssertionError} (if not).
  *
  * <p>This particular class is responsible for the fallback when a platform offers {@code
  * ComparisonFailure} but it is not available in a particular test environment. In practice, that
@@ -38,16 +40,13 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>(This class also includes logic to format expected and actual values for easier reading.)
  *
- * <p>Another part of the fallback logic is {@code Platform.ComparisonFailureWithFacts}, which has a
+ * <p>Another part of the fallback logic is {@link Platform.ComparisonFailureWithFacts}, which has a
  * different implementation under GWT/j2cl, where {@code ComparisonFailure} is also unavailable but
  * we can't just recover from that at runtime.
  */
 final class ComparisonFailures {
-  static ImmutableList<Fact> makeComparisonFailureFacts(
-      ImmutableList<Fact> headFacts,
-      ImmutableList<Fact> tailFacts,
-      String expected,
-      String actual) {
+  static List<Fact> makeComparisonFailureFacts(
+      List<Fact> headFacts, List<Fact> tailFacts, String expected, String actual) {
     return concat(headFacts, formatExpectedAndActual(expected, actual), tailFacts);
   }
 
@@ -63,13 +62,13 @@ final class ComparisonFailures {
    * or end.
    */
   @VisibleForTesting
-  static ImmutableList<Fact> formatExpectedAndActual(String expected, String actual) {
-    ImmutableList<Fact> result;
+  static List<Fact> formatExpectedAndActual(String expected, String actual) {
+    List<Fact> result;
 
     // TODO(cpovirk): Call attention to differences in trailing whitespace.
     // TODO(cpovirk): And changes in the *kind* of whitespace characters in the middle of the line.
 
-    result = Platform.makeDiff(expected, actual);
+    result = makeDiff(expected, actual);
     if (result != null) {
       return result;
     }
@@ -82,8 +81,7 @@ final class ComparisonFailures {
     return ImmutableList.of(fact("expected", expected), fact("but was", actual));
   }
 
-  private static @Nullable ImmutableList<Fact> removeCommonPrefixAndSuffix(
-      String expected, String actual) {
+  private static @Nullable List<Fact> removeCommonPrefixAndSuffix(String expected, String actual) {
     int originalExpectedLength = expected.length();
 
     // TODO(cpovirk): Use something like BreakIterator where available.

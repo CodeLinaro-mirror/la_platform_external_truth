@@ -16,8 +16,13 @@
 package com.google.common.truth;
 
 import static com.google.common.truth.ExpectFailure.assertThat;
+import static com.google.common.truth.ExpectFailure.expectFailure;
+import static com.google.common.truth.FailureAssertions.assertFailureKeys;
+import static com.google.common.truth.FailureAssertions.assertFailureValue;
+import static com.google.common.truth.TestPlatform.assertIsComparisonFailureIfAvailable;
+import static com.google.common.truth.TestPlatform.assertIsNotComparisonFailureIfAvailable;
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtIncompatible;
 import java.util.regex.Pattern;
@@ -25,14 +30,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for String Subjects.
- *
- * @author David Saff
- * @author Christian Gruber (cgruber@israfil.net)
- */
+/** Tests for {@link StringSubject}. */
 @RunWith(JUnit4.class)
-public class StringSubjectTest extends BaseSubjectTestCase {
+public class StringSubjectTest {
 
   @Test
   public void hasLength() {
@@ -46,137 +46,139 @@ public class StringSubjectTest extends BaseSubjectTestCase {
 
   @Test
   public void hasLengthFails() {
-    expectFailureWhenTestingThat("kurt").hasLength(5);
-    assertFailureValue("value of", "string.length()");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("kurt").hasLength(5));
+    assertFailureValue(e, "value of", "string.length()");
   }
 
   @Test
   public void hasLengthNegative() {
-    try {
-      assertThat("kurt").hasLength(-1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> assertThat("kurt").hasLength(-1));
   }
 
   @Test
-  public void stringIsEmpty() {
+  public void hasLengthNullString() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((String) null).hasLength(5));
+    assertFailureKeys(e, "expected a string with length", "but was");
+  }
+
+  @Test
+  public void isEmpty() {
     assertThat("").isEmpty();
   }
 
   @Test
-  public void stringIsEmptyFail() {
-    expectFailureWhenTestingThat("abc").isEmpty();
-    assertFailureKeys("expected to be empty", "but was");
+  public void isEmptyFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").isEmpty());
+    assertFailureKeys(e, "expected to be empty", "but was");
   }
 
   @Test
-  public void stringIsEmptyFailNull() {
-    expectFailureWhenTestingThat(null).isEmpty();
-    assertFailureKeys("expected an empty string", "but was");
+  public void isEmptyFailNull() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((String) null).isEmpty());
+    assertFailureKeys(e, "expected an empty string", "but was");
   }
 
   @Test
-  public void stringIsNotEmpty() {
+  public void isNotEmpty() {
     assertThat("abc").isNotEmpty();
   }
 
   @Test
-  public void stringIsNotEmptyFail() {
-    expectFailureWhenTestingThat("").isNotEmpty();
-    assertFailureKeys("expected not to be empty");
+  public void isNotEmptyFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("").isNotEmpty());
+    assertFailureKeys(e, "expected not to be empty");
   }
 
   @Test
-  public void stringIsNotEmptyFailNull() {
-    expectFailureWhenTestingThat(null).isNotEmpty();
-    assertFailureKeys("expected a non-empty string", "but was");
+  public void isNotEmptyFailNull() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that((String) null).isNotEmpty());
+    assertFailureKeys(e, "expected a non-empty string", "but was");
   }
 
   @Test
-  public void stringContains() {
+  public void contains() {
     assertThat("abc").contains("c");
   }
 
   @Test
-  public void stringContainsCharSeq() {
+  public void containsCharSeq() {
     CharSequence charSeq = new StringBuilder("c");
     assertThat("abc").contains(charSeq);
   }
 
   @Test
-  public void stringContainsFail() {
-    expectFailureWhenTestingThat("abc").contains("d");
-    assertFailureValue("expected to contain", "d");
+  public void containsFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").contains("d"));
+    assertFailureValue(e, "expected to contain", "d");
   }
 
   @Test
-  public void stringDoesNotContain() {
+  public void doesNotContain() {
     assertThat("abc").doesNotContain("d");
   }
 
   @Test
-  public void stringDoesNotContainCharSequence() {
+  public void doesNotContainCharSequence() {
     CharSequence charSeq = new StringBuilder("d");
     assertThat("abc").doesNotContain(charSeq);
   }
 
   @Test
-  public void stringDoesNotContainFail() {
-    expectFailureWhenTestingThat("abc").doesNotContain("b");
-    assertFailureValue("expected not to contain", "b");
+  public void doesNotContainFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").doesNotContain("b"));
+    assertFailureValue(e, "expected not to contain", "b");
   }
 
   @Test
   @SuppressWarnings("TruthSelfEquals")
-  public void stringEquality() {
+  public void equality() {
     assertThat("abc").isEqualTo("abc");
   }
 
   @Test
-  public void stringEqualityToNull() {
-    expectFailureWhenTestingThat("abc").isEqualTo(null);
-    assertThat(expectFailure.getFailure()).isNotInstanceOf(ComparisonFailureWithFacts.class);
+  public void equalityToNull() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").isEqualTo(null));
+    assertIsNotComparisonFailureIfAvailable(e);
   }
 
   @Test
-  public void stringEqualityToEmpty() {
-    expectFailureWhenTestingThat("abc").isEqualTo("");
-    assertFailureKeys("expected an empty string", "but was");
+  public void equalityToEmpty() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").isEqualTo(""));
+    assertFailureKeys(e, "expected an empty string", "but was");
   }
 
   @Test
-  public void stringEqualityEmptyToNonEmpty() {
-    expectFailureWhenTestingThat("").isEqualTo("abc");
-    assertFailureKeys("expected", "but was an empty string");
+  public void equalityEmptyToNonEmpty() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("").isEqualTo("abc"));
+    assertFailureKeys(e, "expected", "but was an empty string");
   }
 
   @Test
-  public void stringEqualityFail() {
-    expectFailureWhenTestingThat("abc").isEqualTo("ABC");
-    assertThat(expectFailure.getFailure()).isInstanceOf(ComparisonFailureWithFacts.class);
+  public void equalityFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").isEqualTo("ABC"));
+    assertIsComparisonFailureIfAvailable(e);
   }
 
   @Test
-  public void stringStartsWith() {
+  public void startsWith() {
     assertThat("abc").startsWith("ab");
   }
 
   @Test
-  public void stringStartsWithFail() {
-    expectFailureWhenTestingThat("abc").startsWith("bc");
-    assertFailureValue("expected to start with", "bc");
+  public void startsWithFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").startsWith("bc"));
+    assertFailureValue(e, "expected to start with", "bc");
   }
 
   @Test
-  public void stringEndsWith() {
+  public void endsWith() {
     assertThat("abc").endsWith("bc");
   }
 
   @Test
-  public void stringEndsWithFail() {
-    expectFailureWhenTestingThat("abc").endsWith("ab");
-    assertFailureValue("expected to end with", "ab");
+  public void endsWithFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("abc").endsWith("ab"));
+    assertFailureValue(e, "expected to end with", "ab");
   }
 
   @Test
@@ -190,69 +192,91 @@ public class StringSubjectTest extends BaseSubjectTestCase {
   }
 
   @Test
-  public void stringMatchesString() {
+  public void matchesString() {
     assertThat("abcaaadev").matches(".*aaa.*");
   }
 
   @Test
-  public void stringMatchesStringWithFail() {
-    expectFailureWhenTestingThat("abcaqadev").matches(".*aaa.*");
-    assertFailureValue("expected to match", ".*aaa.*");
+  public void matchesStringWithFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abcaqadev").matches(".*aaa.*"));
+    assertFailureValue(e, "expected to match", ".*aaa.*");
   }
 
   @Test
-  public void stringMatchesStringFailNull() {
-    expectFailureWhenTestingThat(null).matches(".*aaa.*");
-    assertFailureValue("expected a string that matches", ".*aaa.*");
+  public void matchesStringFailsBecauseAlternativesAreParenthesized() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("foobar").matches("foo|bar"));
+    assertFailureValue(e, "expected to match", "foo|bar");
   }
 
   @Test
-  public void stringMatchesStringLiteralFail() {
-    expectFailureWhenTestingThat("$abc").matches("$abc");
-    assertFailureValue("expected to match", "$abc");
-    assertFailureValue("but was", "$abc");
-    assertThat(expectFailure.getFailure())
+  public void matchesStringFailNull() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((String) null).matches(".*aaa.*"));
+    assertFailureValue(e, "expected a string that matches", ".*aaa.*");
+  }
+
+  @Test
+  public void matchesStringLiteralFail() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("$abc").matches("$abc"));
+    assertFailureValue(e, "expected to match", "$abc");
+    assertFailureValue(e, "but was", "$abc");
+    assertThat(e)
         .factKeys()
         .contains("Looks like you want to use .isEqualTo() for an exact equality assertion.");
   }
 
   @Test
-  public void stringMatchesStringLiteralFailButContainsMatchSuccess() {
-    expectFailureWhenTestingThat("aba").matches("[b]");
-    assertFailureValue("expected to match", "[b]");
-    assertFailureValue("but was", "aba");
-    assertThat(expectFailure.getFailure())
-        .factKeys()
-        .contains("Did you mean to call containsMatch() instead of match()?");
+  public void matchesStringLiteralFailButContainsMatchSuccess() {
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("aba").matches("[b]"));
+    assertFailureValue(e, "expected to match", "[b]");
+    assertFailureValue(e, "but was", "aba");
+    assertThat(e).factKeys().contains("Did you mean to call containsMatch() instead of match()?");
+  }
+
+  @Test
+  public void matchesStringBadRegexDoesNotShowModifiedRegex() {
+    /*
+     * Ideally, Truth would catch the appropriate kind of Throwable for each platform and then
+     * report it as a failure as usual.
+     */
+    Throwable e = assertThrows(Throwable.class, () -> assertThat("aba").matches("["));
+    // Either the error shouldn't show the message at all, or it should show /[/, not /^(?:[)$/.
+    assertThat(e).hasMessageThat().doesNotContain("[)");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringMatchesPattern() {
+  public void matchesPattern() {
     assertThat("abcaaadev").matches(Pattern.compile(".*aaa.*"));
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringMatchesPatternWithFail() {
-    expectFailureWhenTestingThat("abcaqadev").matches(Pattern.compile(".*aaa.*"));
-    assertFailureValue("expected to match", ".*aaa.*");
+  public void matchesPatternWithFail() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that("abcaqadev").matches(Pattern.compile(".*aaa.*")));
+    assertFailureValue(e, "expected to match", ".*aaa.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringMatchesPatternFailNull() {
-    expectFailureWhenTestingThat(null).matches(Pattern.compile(".*aaa.*"));
-    assertFailureValue("expected a string that matches", ".*aaa.*");
+  public void matchesPatternFailNull() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that((String) null).matches(Pattern.compile(".*aaa.*")));
+    assertFailureValue(e, "expected a string that matches", ".*aaa.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringMatchesPatternLiteralFail() {
-    expectFailureWhenTestingThat("$abc").matches(Pattern.compile("$abc"));
-    assertFailureValue("expected to match", "$abc");
-    assertFailureValue("but was", "$abc");
-    assertThat(expectFailure.getFailure())
+  public void matchesPatternLiteralFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("$abc").matches(Pattern.compile("$abc")));
+    assertFailureValue(e, "expected to match", "$abc");
+    assertFailureValue(e, "but was", "$abc");
+    assertThat(e)
         .factKeys()
         .contains(
             "If you want an exact equality assertion you can escape your regex with"
@@ -261,297 +285,331 @@ public class StringSubjectTest extends BaseSubjectTestCase {
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringMatchesPatternLiteralFailButContainsMatchSuccess() {
-    expectFailureWhenTestingThat("aba").matches(Pattern.compile("[b]"));
-    assertFailureValue("expected to match", "[b]");
-    assertFailureValue("but was", "aba");
-    assertThat(expectFailure.getFailure())
-        .factKeys()
-        .contains("Did you mean to call containsMatch() instead of match()?");
+  public void matchesPatternLiteralFailButContainsMatchSuccess() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("aba").matches(Pattern.compile("[b]")));
+    assertFailureValue(e, "expected to match", "[b]");
+    assertFailureValue(e, "but was", "aba");
+    assertThat(e).factKeys().contains("Did you mean to call containsMatch() instead of match()?");
   }
 
   @Test
-  public void stringDoesNotMatchString() {
+  public void doesNotMatchString() {
     assertThat("abcaqadev").doesNotMatch(".*aaa.*");
   }
 
   @Test
-  public void stringDoesNotMatchStringWithFail() {
-    expectFailureWhenTestingThat("abcaaadev").doesNotMatch(".*aaa.*");
-    assertFailureValue("expected not to match", ".*aaa.*");
+  public void doesNotMatchStringWithFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abcaaadev").doesNotMatch(".*aaa.*"));
+    assertFailureValue(e, "expected not to match", ".*aaa.*");
   }
 
   @Test
-  public void stringDoesNotMatchStringFailNull() {
-    expectFailureWhenTestingThat(null).doesNotMatch(".*aaa.*");
-    assertFailureValue("expected a string that does not match", ".*aaa.*");
+  public void doesNotMatchStringFailNull() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((String) null).doesNotMatch(".*aaa.*"));
+    assertFailureValue(e, "expected a string that does not match", ".*aaa.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringDoesNotMatchPattern() {
+  public void doesNotMatchPattern() {
     assertThat("abcaqadev").doesNotMatch(Pattern.compile(".*aaa.*"));
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringDoesNotMatchPatternWithFail() {
-    expectFailureWhenTestingThat("abcaaadev").doesNotMatch(Pattern.compile(".*aaa.*"));
-    assertFailureValue("expected not to match", ".*aaa.*");
+  public void doesNotMatchPatternWithFail() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that("abcaaadev").doesNotMatch(Pattern.compile(".*aaa.*")));
+    assertFailureValue(e, "expected not to match", ".*aaa.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringDoesNotMatchPatternFailNull() {
-    expectFailureWhenTestingThat(null).doesNotMatch(Pattern.compile(".*aaa.*"));
-    assertFailureValue("expected a string that does not match", ".*aaa.*");
+  public void doesNotMatchPatternFailNull() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that((String) null).doesNotMatch(Pattern.compile(".*aaa.*")));
+    assertFailureValue(e, "expected a string that does not match", ".*aaa.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringContainsMatchStringUsesFind() {
+  public void containsMatchStringUsesFind() {
     assertThat("aba").containsMatch("[b]");
     assertThat("aba").containsMatch(Pattern.compile("[b]"));
   }
 
   @Test
-  public void stringContainsMatchString() {
+  public void containsMatchString() {
     assertThat("aba").containsMatch(".*b.*");
 
-    expectFailureWhenTestingThat("aaa").containsMatch(".*b.*");
-    assertFailureValue("expected to contain a match for", ".*b.*");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("aaa").containsMatch(".*b.*"));
+    assertFailureValue(e, "expected to contain a match for", ".*b.*");
   }
 
   @Test
-  public void stringContainsMatchStringFailNull() {
-    expectFailureWhenTestingThat(null).containsMatch(".*b.*");
-    assertFailureValue("expected a string that contains a match for", ".*b.*");
+  public void containsMatchStringFailNull() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((String) null).containsMatch(".*b.*"));
+    assertFailureValue(e, "expected a string that contains a match for", ".*b.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringContainsMatchPattern() {
+  public void containsMatchPattern() {
     assertThat("aba").containsMatch(Pattern.compile(".*b.*"));
 
-    expectFailureWhenTestingThat("aaa").containsMatch(Pattern.compile(".*b.*"));
-    assertFailureValue("expected to contain a match for", ".*b.*");
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that("aaa").containsMatch(Pattern.compile(".*b.*")));
+    assertFailureValue(e, "expected to contain a match for", ".*b.*");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringContainsMatchPatternFailNull() {
-    expectFailureWhenTestingThat(null).containsMatch(Pattern.compile(".*b.*"));
-    assertFailureValue("expected a string that contains a match for", ".*b.*");
+  public void containsMatchPatternFailNull() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that((String) null).containsMatch(Pattern.compile(".*b.*")));
+    assertFailureValue(e, "expected a string that contains a match for", ".*b.*");
   }
 
   @Test
-  public void stringDoesNotContainMatchString() {
+  public void doesNotContainMatchString() {
     assertThat("aaa").doesNotContainMatch(".*b.*");
 
-    expectFailureWhenTestingThat("aba").doesNotContainMatch(".*b.*");
-    assertFailureValue("expected not to contain a match for", ".*b.*");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("aba").doesNotContainMatch(".*b.*"));
+    assertFailureValue(e, "expected not to contain a match for", ".*b.*");
   }
 
   @Test
-  public void stringDoesNotContainMatchStringUsesFind() {
-    expectFailureWhenTestingThat("aba").doesNotContainMatch("[b]");
-    assertFailureValue("expected not to contain a match for", "[b]");
+  public void doesNotContainMatchStringUsesFind() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("aba").doesNotContainMatch("[b]"));
+    assertFailureValue(e, "expected not to contain a match for", "[b]");
   }
 
   @Test
-  public void stringDoesNotContainMatchStringUsesFindFailNull() {
-    expectFailureWhenTestingThat(null).doesNotContainMatch("[b]");
-    assertFailureValue("expected a string that does not contain a match for", "[b]");
+  public void doesNotContainMatchStringUsesFindFailNull() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((String) null).doesNotContainMatch("[b]"));
+    assertFailureValue(e, "expected a string that does not contain a match for", "[b]");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringDoesNotContainMatchPattern() {
+  public void doesNotContainMatchPattern() {
     assertThat("zzaaazz").doesNotContainMatch(Pattern.compile(".b."));
 
-    expectFailureWhenTestingThat("zzabazz").doesNotContainMatch(Pattern.compile(".b."));
-    assertFailureValue("expected not to contain a match for", ".b.");
-    assertFailureValue("but contained", "aba");
-    assertFailureValue("full string", "zzabazz");
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that("zzabazz").doesNotContainMatch(Pattern.compile(".b.")));
+    assertFailureValue(e, "expected not to contain a match for", ".b.");
+    assertFailureValue(e, "but contained", "aba");
+    assertFailureValue(e, "full string", "zzabazz");
   }
 
   @Test
   @GwtIncompatible("Pattern")
-  public void stringDoesNotContainMatchPatternFailNull() {
-    expectFailureWhenTestingThat(null).doesNotContainMatch(Pattern.compile(".b."));
-    assertFailureValue("expected a string that does not contain a match for", ".b.");
+  public void doesNotContainMatchPatternFailNull() {
+    AssertionError e =
+        expectFailure(
+            whenTesting ->
+                whenTesting.that((String) null).doesNotContainMatch(Pattern.compile(".b.")));
+    assertFailureValue(e, "expected a string that does not contain a match for", ".b.");
   }
 
   @Test
-  public void stringEqualityIgnoringCase() {
+  public void equalityIgnoringCase() {
     assertThat("café").ignoringCase().isEqualTo("CAFÉ");
   }
 
   @Test
-  public void stringEqualityIgnoringCaseWithNullSubject() {
+  public void equalityIgnoringCaseWithNullSubject() {
     assertThat((String) null).ignoringCase().isEqualTo(null);
   }
 
   @Test
-  public void stringEqualityIgnoringCaseFail() {
-    expectFailureWhenTestingThat("abc").ignoringCase().isEqualTo("abd");
+  public void equalityIgnoringCaseFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abc").ignoringCase().isEqualTo("abd"));
 
-    assertFailureValue("expected", "abd");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected", "abd");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringEqualityIgnoringCaseFailWithNullSubject() {
-    expectFailureWhenTestingThat((String) null).ignoringCase().isEqualTo("abc");
+  public void equalityIgnoringCaseFailWithNullSubject() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that((String) null).ignoringCase().isEqualTo("abc"));
 
-    assertFailureValue("expected a string that is equal to", "abc");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected a string that is equal to", "abc");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringEqualityIgnoringCaseFailWithNullExpectedString() {
-    expectFailureWhenTestingThat("abc").ignoringCase().isEqualTo(null);
+  public void equalityIgnoringCaseFailWithNullExpectedString() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abc").ignoringCase().isEqualTo(null));
 
-    assertFailureValue("expected", "null (null reference)");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected", "null (null reference)");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringInequalityIgnoringCase() {
+  public void inequalityIgnoringCase() {
     assertThat("café").ignoringCase().isNotEqualTo("AFÉ");
   }
 
   @Test
-  public void stringInequalityIgnoringCaseWithNullSubject() {
+  public void inequalityIgnoringCaseWithNullSubject() {
     assertThat((String) null).ignoringCase().isNotEqualTo("abc");
   }
 
   @Test
-  public void stringInequalityIgnoringCaseWithNullExpectedString() {
+  public void inequalityIgnoringCaseWithNullExpectedString() {
     assertThat("abc").ignoringCase().isNotEqualTo(null);
   }
 
   @Test
-  public void stringInequalityIgnoringCaseFail() {
-    expectFailureWhenTestingThat("café").ignoringCase().isNotEqualTo("CAFÉ");
+  public void inequalityIgnoringCaseFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("café").ignoringCase().isNotEqualTo("CAFÉ"));
 
-    assertFailureValue("expected not to be", "CAFÉ");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected not to be", "CAFÉ");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringInequalityIgnoringCaseFailWithNullSubject() {
-    expectFailureWhenTestingThat((String) null).ignoringCase().isNotEqualTo(null);
+  public void inequalityIgnoringCaseFailWithNullSubject() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that((String) null).ignoringCase().isNotEqualTo(null));
 
-    assertFailureValue("expected a string that is not equal to", "null (null reference)");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected a string that is not equal to", "null (null reference)");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringContainsIgnoringCase() {
+  public void containsIgnoringCase() {
     assertThat("äbc").ignoringCase().contains("Ä");
   }
 
   @Test
-  public void stringContainsIgnoringCaseEmptyString() {
+  public void containsIgnoringCaseEmptyString() {
     assertThat("abc").ignoringCase().contains("");
   }
 
   @Test
-  public void stringContainsIgnoringCaseWithWord() {
+  public void containsIgnoringCaseWithWord() {
     assertThat("abcdé").ignoringCase().contains("CdÉ");
   }
 
   @Test
-  public void stringContainsIgnoringCaseWholeWord() {
+  public void containsIgnoringCaseWholeWord() {
     assertThat("abcde").ignoringCase().contains("ABCde");
   }
 
   @Test
-  public void stringContainsIgnoringCaseCharSeq() {
+  public void containsIgnoringCaseCharSeq() {
     CharSequence charSeq = new StringBuilder("C");
     assertThat("abc").ignoringCase().contains(charSeq);
   }
 
   @Test
-  public void stringContainsIgnoringCaseFail() {
-    expectFailureWhenTestingThat("abc").ignoringCase().contains("d");
+  public void containsIgnoringCaseFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abc").ignoringCase().contains("d"));
 
-    assertFailureValue("expected to contain", "d");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected to contain", "d");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringContainsIgnoringCaseFailBecauseTooLarge() {
-    expectFailureWhenTestingThat("abc").ignoringCase().contains("abcc");
+  public void containsIgnoringCaseFailBecauseTooLarge() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abc").ignoringCase().contains("abcc"));
 
-    assertFailureValue("expected to contain", "abcc");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected to contain", "abcc");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringContainsIgnoringCaseFailBecauseNullSubject() {
-    expectFailureWhenTestingThat((String) null).ignoringCase().contains("d");
+  public void containsIgnoringCaseFailBecauseNullSubject() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that((String) null).ignoringCase().contains("d"));
 
-    assertFailureValue("expected a string that contains", "d");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected a string that contains", "d");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringDoesNotContainIgnoringCase() {
+  public void doesNotContainIgnoringCase() {
     assertThat("äbc").ignoringCase().doesNotContain("Äc");
   }
 
   @Test
-  public void stringDoesNotContainIgnoringCaseCharSeq() {
+  public void doesNotContainIgnoringCaseCharSeq() {
     CharSequence charSeq = new StringBuilder("cb");
     assertThat("abc").ignoringCase().doesNotContain(charSeq);
   }
 
   @Test
-  public void stringDoesNotContainIgnoringCaseFail() {
-    expectFailureWhenTestingThat("äbc").ignoringCase().doesNotContain("Äb");
+  public void doesNotContainIgnoringCaseFail() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("äbc").ignoringCase().doesNotContain("Äb"));
 
-    assertFailureValue("expected not to contain", "Äb");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected not to contain", "Äb");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringDoesNotContainIgnoringCaseFailWithEmptyString() {
-    expectFailureWhenTestingThat("abc").ignoringCase().doesNotContain("");
+  public void doesNotContainIgnoringCaseFailWithEmptyString() {
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("abc").ignoringCase().doesNotContain(""));
 
-    assertFailureValue("expected not to contain", "");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected not to contain", "");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
-  public void stringDoesNotContainIgnoringCaseFailBecauseNullSubject() {
-    expectFailureWhenTestingThat((String) null).ignoringCase().doesNotContain("d");
+  public void doesNotContainIgnoringCaseFailBecauseNullSubject() {
+    AssertionError e =
+        expectFailure(
+            whenTesting -> whenTesting.that((String) null).ignoringCase().doesNotContain("d"));
 
-    assertFailureValue("expected a string that does not contain", "d");
-    assertThat(expectFailure.getFailure()).factKeys().contains("(case is ignored)");
+    assertFailureValue(e, "expected a string that does not contain", "d");
+    assertThat(e).factKeys().contains("(case is ignored)");
   }
 
   @Test
   public void trailingWhitespaceInActual() {
-    expectFailureWhenTestingThat("foo\n").isEqualTo("foo");
-    assertFailureKeys("expected", "but contained extra trailing whitespace");
-    assertFailureValue("but contained extra trailing whitespace", "\\n");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("foo\n").isEqualTo("foo"));
+    assertFailureKeys(e, "expected", "but contained extra trailing whitespace");
+    assertFailureValue(e, "but contained extra trailing whitespace", "\\n");
   }
 
   @Test
   public void trailingWhitespaceInExpected() {
-    expectFailureWhenTestingThat("foo").isEqualTo("foo ");
-    assertFailureKeys("expected", "but was missing trailing whitespace");
-    assertFailureValue("but was missing trailing whitespace", "␣");
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("foo").isEqualTo("foo "));
+    assertFailureKeys(e, "expected", "but was missing trailing whitespace");
+    assertFailureValue(e, "but was missing trailing whitespace", "␣");
   }
 
   @Test
   public void trailingWhitespaceInBoth() {
-    expectFailureWhenTestingThat("foo \n").isEqualTo("foo\u00a0");
-    assertFailureKeys("expected", "with trailing whitespace", "but trailing whitespace was");
-    assertFailureValue("with trailing whitespace", "\\u00a0");
-    assertFailureValue("but trailing whitespace was", "␣\\n");
+    AssertionError e =
+        expectFailure(whenTesting -> whenTesting.that("foo \n").isEqualTo("foo\u00a0"));
+    assertFailureKeys(e, "expected", "with trailing whitespace", "but trailing whitespace was");
+    assertFailureValue(e, "with trailing whitespace", "\\u00a0");
+    assertFailureValue(e, "but trailing whitespace was", "␣\\n");
   }
 
   @Test
@@ -561,12 +619,8 @@ public class StringSubjectTest extends BaseSubjectTestCase {
      * it specifically reports the trailing whitespace. (It might be nice to *also* report the empty
      * string specially, but that's less important.)
      */
-    expectFailureWhenTestingThat("\t").isEqualTo("");
-    assertFailureKeys("expected", "but contained extra trailing whitespace");
-    assertFailureValue("but contained extra trailing whitespace", "\\t");
-  }
-
-  private StringSubject expectFailureWhenTestingThat(String actual) {
-    return expectFailure.whenTesting().that(actual);
+    AssertionError e = expectFailure(whenTesting -> whenTesting.that("\t").isEqualTo(""));
+    assertFailureKeys(e, "expected", "but contained extra trailing whitespace");
+    assertFailureValue(e, "but contained extra trailing whitespace", "\\t");
   }
 }

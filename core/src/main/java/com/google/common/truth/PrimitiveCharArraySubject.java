@@ -15,26 +15,45 @@
  */
 package com.google.common.truth;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.truth.Fact.simpleFact;
+import static java.util.Collections.emptyList;
 
 import com.google.common.primitives.Chars;
 import org.jspecify.annotations.Nullable;
 
-/**
- * A Subject for {@code char[]}.
- *
- * @author Christian Gruber (cgruber@israfil.net)
- */
-public final class PrimitiveCharArraySubject extends AbstractArraySubject {
+/** A subject for {@code char[]} values. */
+public final class PrimitiveCharArraySubject extends Subject {
   private final char @Nullable [] actual;
 
-  PrimitiveCharArraySubject(
-      FailureMetadata metadata, char @Nullable [] o, @Nullable String typeDescription) {
-    super(metadata, o, typeDescription);
-    this.actual = o;
+  private PrimitiveCharArraySubject(FailureMetadata metadata, char @Nullable [] actual) {
+    super(metadata, actual);
+    this.actual = actual;
   }
 
   public IterableSubject asList() {
-    return checkNoNeedToDisplayBothValues("asList()").that(Chars.asList(checkNotNull(actual)));
+    if (actual == null) {
+      failWithoutActual(simpleFact("cannot perform assertions on the contents of a null array"));
+      return ignoreCheck().that(emptyList());
+    }
+    return checkNoNeedToDisplayBothValues("asList()").that(Chars.asList(actual));
+  }
+
+  /** Checks that the actual array is empty (i.e., that {@code array.length == 0}). */
+  public void isEmpty() {
+    arrayIsEmptyImpl();
+  }
+
+  /** Checks that the actual array is not empty (i.e., that {@code array.length > 0}). */
+  public void isNotEmpty() {
+    arrayIsNotEmptyImpl();
+  }
+
+  /** Checks that the actual array has the given length. */
+  public void hasLength(int length) {
+    arrayHasLengthImpl(length);
+  }
+
+  static Factory<PrimitiveCharArraySubject, char[]> charArrays() {
+    return PrimitiveCharArraySubject::new;
   }
 }
